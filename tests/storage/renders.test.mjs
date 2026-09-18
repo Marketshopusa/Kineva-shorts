@@ -11,3 +11,7 @@ test("render path is stable and not mixed with dubs", () => {
     "series/2/episodes/9/kineva-demo.mp4",
   ])
 })
+
+test("new drama episodes use episode-1.mp4 not the demo filename", () => {
+  assert.equal(renderPath(2, 1), "series/2/episodes/1/episode-1.mp4")
+})
