@@ -199,6 +199,17 @@ export async function POST(request) {
   const session = await requireAdmin()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
+  if (process.env.VERCEL) {
+    return Response.json(
+      {
+        error:
+          "RENDER_WORKER_REQUIRED: Remotion needs Chromium, ffmpeg, RAM, and a long-running worker; Vercel serverless has none of these.",
+        code: "RENDER_WORKER_REQUIRED",
+      },
+      { status: 501 },
+    )
+  }
+
   const data = await request.json()
   if (!data.scenes?.length) {
     return Response.json({ error: "No scenes provided" }, { status: 400 })

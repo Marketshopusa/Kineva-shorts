@@ -92,6 +92,10 @@ export async function POST(request, { params }) {
     })
   } catch (err) {
     console.error("generate-dub error:", err)
+    const msg = String(err?.message || err)
+    if (msg.includes("EDGE_TTS_RUNTIME_BLOCKED")) {
+      return Response.json({ error: msg, code: "EDGE_TTS_RUNTIME_BLOCKED" }, { status: 501 })
+    }
     return jsonRailError(err) || Response.json({ error: err.message || "Failed to generate dub" }, { status: 500 })
   }
 }
