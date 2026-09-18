@@ -58,6 +58,7 @@ export default function EpisodeDetailPage({ params }) {
   const [showWatermark, setShowWatermark] = useState(true)
   const [subtitleEnabled, setSubtitleEnabled] = useState(true)
   const [subtitleSize, setSubtitleSize] = useState(62)
+  const [renderVideo, setRenderVideo] = useState(null)
 
   const exportHook = useExport()
   const visuals = useVisuals()
@@ -75,6 +76,16 @@ export default function EpisodeDetailPage({ params }) {
       })
       .catch(() => {})
   }, [seriesId, episodeNumber])
+
+  useEffect(() => {
+    if (!episode?.id) return
+    fetch(`/api/admin/episodes/${episode.id}/video`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.url) setRenderVideo(data)
+      })
+      .catch(() => {})
+  }, [episode?.id])
 
   async function fetchTracks() {
     try {
@@ -342,6 +353,28 @@ export default function EpisodeDetailPage({ params }) {
         { label: series.title, href: `/admin/series/${seriesId}` },
         { label: `Episode ${episodeNumber}` },
       ]} />
+
+      {renderVideo?.url ? (
+        <div className="mb-6 p-4 bg-surface border border-border rounded-xl max-w-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold">Remote MP4</h2>
+            <a
+              href={renderVideo.url}
+              download="kineva-demo.mp4"
+              className="text-xs text-accent hover:underline"
+            >
+              Download
+            </a>
+          </div>
+          <video
+            src={renderVideo.url}
+            controls
+            playsInline
+            className="w-full bg-black rounded-lg"
+            style={{ aspectRatio: "9 / 16" }}
+          />
+        </div>
+      ) : null}
 
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
