@@ -44,6 +44,11 @@ export default function Navbar() {
           <span className="text-lg font-bold tracking-widest text-brand group-hover:text-accent transition-colors">
             KINEVA
           </span>
+          {process.env.NEXT_PUBLIC_KINEVA_BUILD_SHA ? (
+            <span className="hidden sm:inline text-[10px] text-text-muted font-mono tracking-normal font-normal">
+              Build: {process.env.NEXT_PUBLIC_KINEVA_BUILD_SHA}
+            </span>
+          ) : null}
         </Link>
 
         <div className="flex items-center gap-1 text-sm">
