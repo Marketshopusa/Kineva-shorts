@@ -3,25 +3,21 @@ import { requireAdmin } from "@/lib/adminAuth"
 import { getAIConfig } from "@/lib/getAIConfig"
 import { buildImagePrompt } from "@/lib/buildImagePrompt"
 import prisma from "@/lib/prisma"
-import fs from "fs/promises"
-import path from "path"
 import { loadSeriesRail, railPayload } from "@/lib/series-rail"
 import { generateStillForRail } from "@/lib/still-for-rail"
+import { uploadBuffer, imagePath, IMAGES_BUCKET } from "@/lib/supabase-storage"
 
-const CONCURRENCY = 3
-const IMAGE_SAVE_DIR = (epId) => path.join(process.cwd(), "uploads", "images", String(epId))
-
-async function saveImageToDisk(episodeId, sceneIndex, dataUrl, promptText) {
-  const dir = IMAGE_SAVE_DIR(episodeId)
-  await fs.mkdir(dir, { recursive: true })
+async function persistStill(episodeId, sceneIndex, dataUrl, promptText) {
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "")
-  await fs.writeFile(path.join(dir, `${sceneIndex}.png`), Buffer.from(base64, "base64"))
-  const filePath = path.join("uploads", "images", String(episodeId), `${sceneIndex}.png`)
+  const buffer = Buffer.from(base64, "base64")
+  const storagePath = imagePath(episodeId, sceneIndex, Date.now())
+  await uploadBuffer(IMAGES_BUCKET, storagePath, buffer, "image/png")
   await prisma.image.upsert({
     where: { episodeId_sceneIndex: { episodeId, sceneIndex } },
-    update: { filePath, prompt: promptText || null },
-    create: { episodeId, sceneIndex, filePath, prompt: promptText || null, width: 1080, height: 1920 },
+    update: { filePath: storagePath, prompt: promptText || null },
+    create: { episodeId, sceneIndex, filePath: storagePath, prompt: promptText || null, width: 1080, height: 1920 },
   })
+  return storagePath
 }
 
 export async function POST(request, { params }) {
@@ -50,17 +46,11 @@ export async function POST(request, { params }) {
   const scenes = episode.screenplay?.scenes || []
   if (scenes.length === 0) return Response.json({ error: "No scenes found" }, { status: 400 })
 
-  const existingFiles = new Set()
-  for (let i = 0; i < scenes.length; i++) {
-    try {
-      await fs.access(path.join(IMAGE_SAVE_DIR(episodeId), `${i}.png`))
-      existingFiles.add(i)
-    } catch { /* file missing */ }
-  }
+  const existingIndexes = new Set((episode.images || []).map((img) => img.sceneIndex))
 
   const queue = scenes
     .map((scene, index) => ({ scene, index }))
-    .filter(({ index }) => !onlyMissing || !existingFiles.has(index))
+    .filter(({ index }) => !onlyMissing || !existingIndexes.has(index))
 
   if (queue.length === 0) {
     return Response.json({
@@ -85,30 +75,25 @@ export async function POST(request, { params }) {
     const fullPrompt = buildImagePrompt({ scene, characters, series, maxLength: 1500 })
     const { dataUrl, provider: used } = await generateStillForRail(rail, fullPrompt, config)
     if (used === "leonardo") results.usedLeonardo = true
-    await saveImageToDisk(episodeId, index, dataUrl, fullPrompt)
+    await persistStill(episodeId, index, dataUrl, fullPrompt)
     results.generated++
   }
 
-  const active = new Map()
-  let nextId = 0
-  const remaining = [...queue]
-
-  while (remaining.length > 0 || active.size > 0) {
-    while (active.size < CONCURRENCY && remaining.length > 0) {
-      const item = remaining.shift()
-      const id = nextId++
-      const p = generateOne(item)
-        .then(() => id)
-        .catch((err) => {
-          results.failed++
-          results.errors.push(`scene ${item.index}: ${err.message}`)
-          return id
-        })
-      active.set(id, p)
-    }
-    if (active.size > 0) {
-      const doneId = await Promise.race(active.values())
-      active.delete(doneId)
+  for (const item of queue) {
+    try {
+      await generateOne(item)
+    } catch (err) {
+      results.failed++
+      results.errors.push(`scene ${item.index}: ${err.message}`)
+      const quota = err?.status === 429 || /BLOQUEADO POR CUOTA|429/i.test(String(err?.message || ""))
+      if (quota) {
+        return Response.json({ ...results, episodeId, total: scenes.length, code: "GEMINI_IMAGE_BLOCKED_QUOTA" }, { status: 429 })
+      }
+      const topUp = /FAL_TOP_UP_REQUIRED|BLOCKED_BALANCE/i.test(String(err?.message || ""))
+      if (topUp) {
+        return Response.json({ ...results, episodeId, total: scenes.length, code: "FAL_TOP_UP_REQUIRED" }, { status: 402 })
+      }
+      break
     }
   }
 

@@ -6,6 +6,8 @@ import {
   assertAdapterMatchesRail,
   normalizeRating,
   summarizeRail,
+  withEffectiveImageRail,
+  effectiveImageProvider,
 } from "../../lib/content-rails.js"
 import { dispatchStill, isQuotaError, quotaBlockMessage } from "../../lib/providers/images/select.js"
 
@@ -108,6 +110,17 @@ test("Fal failure does not call Gemini", async () => {
     }),
     (err) => /BLOCKED_BALANCE/.test(err.message) && gem === 0,
   )
+})
+
+test("SFW_IMAGE_PROVIDER=fal does not change mature/explicit or SFW text", () => {
+  const env = { SFW_IMAGE_PROVIDER: "fal", FAL_KEY: "x", FAL_ALLOW_GENERATE: "1", GOOGLE_API_KEY: "g" }
+  const sfw = withEffectiveImageRail(resolveContentRail("sfw"), env)
+  assert.equal(sfw.textProvider, "gemini")
+  assert.equal(sfw.imageProvider, "fal")
+  assert.equal(effectiveImageProvider(resolveContentRail("mature"), env), "fal")
+  assert.equal(resolveContentRail("mature").imageProvider, "fal")
+  assert.equal(summarizeRail("sfw").image, "gemini")
+  assert.equal(summarizeRail("sfw").text, "gemini")
 })
 
 test("mature without Qwen is BLOCKED_CONFIG; Fal without allow is BLOCKED_BALANCE", () => {
