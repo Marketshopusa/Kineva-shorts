@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scenarix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scenarix}
+      POSTGRES_DB: scenarix
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not exposed to host — only accessible by the app service via Docker network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scenarix"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-3001}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database — points to the local 'db' service by default
+      # To use Supabase instead, override these in your .env file
+      DATABASE_URL: ${DATABASE_URL:-postgresql://scenarix:scenarix@db:5432/scenarix}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://scenarix:scenarix@db:5432/scenarix}
+
+      # Auth
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://kineva.app}
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-in-production}
+
+      # Admin credentials (used for seeding)
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@scenarix.app}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+
+      # API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LEONARDO_API_KEY: ${LEONARDO_API_KEY:-}
+      LEONARDO_MODEL_ID: ${LEONARDO_MODEL_ID:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      CLI_API_KEY: ${CLI_API_KEY:-scenarix-local-key}
+
+      # Chromium for Remotion video export
+      CHROMIUM_PATH: /usr/bin/chromium
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Series {
+  id                 Int         @id @default(autoincrement())
+  title              String
+  theme              String
+  tone               String?
+  setting            String?
+  premise            String?
+  languages          String[]
+  globalStylePrompt  String?     @map("global_style_prompt")
+  visualStyle        String      @default("cinematic") @map("visual_style")
+  ongoingPlotThreads Json        @default("[]") @map("ongoing_plot_threads")
+  pinnedThreads      String[]    @default([]) @map("pinned_threads")
+  lastCliffhanger    String      @default("") @map("last_cliffhanger")
+  episodeSummaries   Json        @default("[]") @map("episode_summaries")
+  seriesBible        Json        @default("{}") @map("series_bible")
+  published          Boolean     @default(false)
+  contentRating      String      @default("sfw") @map("content_rating")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  episodes   Episode[]
+  characters Character[]
+
+  @@map("series")
+}
+
+model Episode {
+  id                    Int      @id @default(autoincrement())
+  seriesId              Int      @map("series_id")
+  episodeNumber         Int      @map("episode_number")
+  title                 String?
+  status                String   @default("setup")
+  direction             String?
+  screenplay            Json?
+  summary               String?
+  cliffhanger           String?
+  plotThreadsIntroduced Json     @default("[]") @map("plot_threads_introduced")
+  plotThreadsResolved   Json     @default("[]") @map("plot_threads_resolved")
+  qualityScore          Json?    @map("quality_score")
+  musicTrack            String?  @map("music_track")
+  musicVolume           Float?   @default(1.0) @map("music_volume")
+  dubScenes             Json?    @map("dub_scenes")
+  defaultDubLang        String?  @map("default_dub_lang")
+  published             Boolean  @default(false)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  series Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  images Image[]
+
+  @@unique([seriesId, episodeNumber])
+  @@index([seriesId])
+  @@map("episodes")
+}
+
+model Character {
+  id                Int      @id @default(autoincrement())
+  seriesId          Int      @map("series_id")
+  name              String
+  role              String?
+  appearance        Json?
+  personality       Json?
+  referenceImageUrl String?  @map("reference_image_url")
+  referenceEpisode  Int?     @map("reference_episode")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  series Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@index([seriesId])
+  @@map("characters")
+}
+
+model Image {
+  id         Int    @id @default(autoincrement())
+  episodeId  Int    @map("episode_id")
+  sceneIndex Int    @map("scene_index")
+  filePath   String @map("file_path")
+  prompt     String?
+  width      Int    @default(1080)
+  height     Int    @default(1920)
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, sceneIndex])
+  @@index([episodeId])
+  @@map("images")
+}
+
+model AudioTrack {
+  id          String   @id
+  name        String
+  storagePath String   @map("storage_path")
+  mood        String   @default("")
+  genre       String   @default("")
+  bpm         Int?
+  tags        String[] @default([])
+  description String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("audio_tracks")
+}
+
+model SiteSettings {
+  id               Int     @id @default(1)
+  logoUrl          String? @map("logo_url")
+  watermarkEnabled Boolean @default(true) @map("watermark_enabled")
+  watermarkText    String  @default("SCENARIX") @map("watermark_text")
+  watermarkSize    Int     @default(48) @map("watermark_size")
+  watermarkColor   String  @default("#FFFFFF") @map("watermark_color")
+  watermarkOpacity Float   @default(0.4) @map("watermark_opacity")
+  leonardoModelId  String? @map("leonardo_model_id")
+  llmProvider           String  @default("anthropic") @map("llm_provider")
+  defaultImageProvider  String? @map("default_image_provider")
+  geminiImageModel      String? @map("gemini_image_model")
+  elevenLabsVoiceId     String? @map("elevenlabs_voice_id")
+  hiddenTracks          String[] @default([]) @map("hidden_tracks")
+
+  @@map("site_settings")
+}

@@ -1,0 +1,68 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+.env.local
+
+/lib/generated/prisma
+
+# uploads (keep directory structure, ignore contents)
+/uploads/*
+!/uploads/.gitkeep
+/public/media/dubs/
+/public/media/test-stills/
+/public/e2e-dubs/
+/public/e2e-stills/
+
+/tmp/
+
+# Claude Code local settings (keep mcp.json for shared MCP config)
+.claude/settings.local.json
+.claude/launch.json
+.claude/worktrees/
+.claude/.DS_Store
+
+# local projects
+lingolife/
+
+# root MCP config (contains personal absolute paths)
+.mcp.json

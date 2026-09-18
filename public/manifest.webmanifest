@@ -1,0 +1,22 @@
+{
+  "name": "Kineva",
+  "short_name": "Kineva",
+  "description": "Plataforma de series dramáticas cortas generadas con IA. Vertical 9:16.",
+  "start_url": "/admin",
+  "display": "standalone",
+  "background_color": "#0B1020",
+  "theme_color": "#7A2948",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "32x32",
+      "type": "image/svg+xml"
+    }
+  ]
+}

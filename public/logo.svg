@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Kineva">
+  <rect width="240" height="240" rx="44" fill="#0B1020"/>
+  <!-- 9:16 stage -->
+  <rect x="72" y="28" width="96" height="168" rx="14" fill="#141A2E" stroke="#E8B86D" stroke-width="6"/>
+  <rect x="84" y="44" width="72" height="112" rx="6" fill="#0B1020"/>
+  <!-- teal cue bar -->
+  <rect x="92" y="168" width="56" height="10" rx="5" fill="#2EC4B6"/>
+  <!-- original K mark, not a star or sprocket -->
+  <path fill="#E8B86D" d="M102 58h14v84h-14V58zm36 0l-28 34 28 50h-16l-22-40 22-28h16z"/>
+</svg>

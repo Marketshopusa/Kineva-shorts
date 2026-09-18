@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "scenarix": {
+      "command": "node",
+      "args": ["mcp/server.mjs"],
+      "env": {
+        "SCENARIX_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
