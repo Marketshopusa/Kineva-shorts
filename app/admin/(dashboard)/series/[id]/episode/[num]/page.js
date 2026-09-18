@@ -15,6 +15,7 @@ import { getTrackById, AUDIO_TRACKS } from "@/config/audioTracks"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import SubtitleEditor from "@/components/ui/SubtitleEditor"
 import SharePanel from "@/components/ui/SharePanel"
+import { episodeIsPopulated, shouldRedirectToWizard } from "@/lib/episode-watch"
 
 const TYPE_COLORS = {
   HOOK: "bg-red-500/20 text-red-400",
@@ -109,8 +110,8 @@ export default function EpisodeDetailPage({ params }) {
       return
     }
 
-    // Redirect in-progress episodes to the creation flow
-    if (ep.status !== "completed") {
+    // Empty in-progress drafts still use the wizard. Populated episodes stay here.
+    if (shouldRedirectToWizard(ep)) {
       router.push(`/admin/series/${seriesId}/episode/new`)
       return
     }
@@ -357,7 +358,7 @@ export default function EpisodeDetailPage({ params }) {
       {renderVideo?.url ? (
         <div className="mb-6 p-4 bg-surface border border-border rounded-xl max-w-sm">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold">Remote MP4</h2>
+            <h2 className="text-sm font-semibold">Watch episode</h2>
             <a
               href={renderVideo.url}
               download="kineva-demo.mp4"
@@ -367,12 +368,26 @@ export default function EpisodeDetailPage({ params }) {
             </a>
           </div>
           <video
-            src={renderVideo.url}
+            src={`/api/admin/episodes/${episode.id}/video?play=1`}
             controls
             playsInline
             className="w-full bg-black rounded-lg"
             style={{ aspectRatio: "9 / 16" }}
           />
+        </div>
+      ) : null}
+
+      {episode.dubScenes ? (
+        <div className="mb-6 p-4 bg-surface border border-border rounded-xl">
+          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Voice dubs</h2>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(normalizeDubScenes(episode.dubScenes) || {}).map(([lang, scenes]) => (
+              <div key={lang} className="text-xs text-text-muted">
+                <span className="font-medium text-text-primary mr-2">{lang.toUpperCase()}</span>
+                {Object.keys(scenes || {}).length} scene audio file{Object.keys(scenes || {}).length === 1 ? "" : "s"}
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -387,7 +402,13 @@ export default function EpisodeDetailPage({ params }) {
             <span>&middot;</span>
             <span>{totalDuration}s</span>
             <span>&middot;</span>
-            <span className="text-green-400">Completed</span>
+            <span className={episode.status === "completed" ? "text-green-400" : "text-accent"}>
+              {episode.status === "completed"
+                ? "Completed"
+                : episodeIsPopulated(episode)
+                  ? `Ready to watch (${episode.status})`
+                  : `In progress (${episode.status})`}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

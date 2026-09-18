@@ -18,6 +18,7 @@ import ExportStep from "@/components/steps/ExportStep"
 import StepIndicator from "@/components/ui/StepIndicator"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import { RotateCcw } from "lucide-react"
+import { episodeIsPopulated } from "@/lib/episode-watch"
 
 const STEPS = ["Setup", "Screenplay", "Visuals", "Preview", "Export"]
 const STEP_NAMES = ["Setup", "Screenplay", "Visuals", "Preview", "Export"]
@@ -60,7 +61,7 @@ export default function EpisodeFlowPage({ params }) {
     setEpisodes(eps)
 
     // Check for in-progress episode to resume
-    const inProgress = eps.find((e) => e.status !== "completed")
+    const inProgress = eps.find((e) => e.status !== "completed" && !episodeIsPopulated(e))
     if (inProgress) {
       setEpisodeId(inProgress.id)
       setEpisodeNumber(inProgress.episodeNumber)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useRef } from "react"
 import Link from "next/link"
 import { loadSeries, loadEpisodes, loadCharacters, deleteEpisode, exportSeriesBackup, loadImage, updateSeries } from "@/lib/storage-api"
 import { getThemeById } from "@/config/themes"
@@ -8,11 +8,14 @@ import CharacterCard from "@/components/characters/CharacterCard"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import { Pin, Check, Trash2, AlertTriangle, ChevronDown, Activity, Eye, EyeOff } from "lucide-react"
 import ConfirmDialog from "@/components/ui/ConfirmDialog"
+import { episodeCardAction, episodeIsPopulated, seriesPrimaryAction } from "@/lib/episode-watch"
 
 // ─── Episode Card ─────────────────────────────────────────────────────────────
 
-function EpisodeCard({ ep, seriesId, thumbnail, toggling, onTogglePublish, onDelete }) {
+function EpisodeCard({ ep, seriesId, thumbnail, toggling, onTogglePublish, onDelete, hasRender }) {
   const isCompleted = ep.status === "completed"
+  const action = episodeCardAction(ep, hasRender)
+  const watchable = action === "watch"
   return (
     <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-xl hover:border-border/80 transition-colors">
       <div className="flex items-center gap-3">
@@ -39,7 +42,7 @@ function EpisodeCard({ ep, seriesId, thumbnail, toggling, onTogglePublish, onDel
             )}
           </div>
           <div className="text-xs text-text-muted">
-            {isCompleted ? "Completed" : `In progress (${ep.status})`}
+            {isCompleted ? "Completed" : watchable ? "Ready to watch" : `In progress (${ep.status})`}
           </div>
           {ep.summary && (
             <p className="text-xs text-text-muted mt-0.5 line-clamp-1 max-w-sm">{ep.summary}</p>
@@ -69,10 +72,10 @@ function EpisodeCard({ ep, seriesId, thumbnail, toggling, onTogglePublish, onDel
           </button>
         )}
         <Link
-          href={`/admin/series/${seriesId}/episode/${ep.episodeNumber}`}
+          href={watchable ? "#episode-watch" : `/admin/series/${seriesId}/episode/${ep.episodeNumber}`}
           className="text-xs text-accent hover:text-accent-hover transition-colors px-2 py-1"
         >
-          {isCompleted ? "View" : "Continue"}
+          {action === "watch" ? "Watch" : action === "view" ? "View" : "Continue"}
         </Link>
         <button
           onClick={onDelete}
@@ -356,6 +359,8 @@ export default function SeriesDetailPage({ params }) {
   const [togglingArc, setTogglingArc] = useState(null)    // arc index being toggled
   const [deleteTarget, setDeleteTarget] = useState(null)  // episode to confirm-delete
   const [loading, setLoading] = useState(true)
+  const [renders, setRenders] = useState({})
+  const watchPlayerRef = useRef(null)
 
   useEffect(() => {
     loadData()
@@ -372,10 +377,26 @@ export default function SeriesDetailPage({ params }) {
     setCharacters(chars)
     setWorldRules(s?.seriesBible?.worldRules?.join("\n") || "")
 
-    // Load thumbnails for completed episodes
+    const probes = {}
+    await Promise.all(
+      (eps || []).map(async (ep) => {
+        if (!episodeIsPopulated(ep)) return
+        try {
+          const res = await fetch(`/api/admin/episodes/${ep.id}/video`)
+          if (!res.ok) return
+          const data = await res.json()
+          if (data?.url) probes[ep.id] = data
+        } catch {
+          // no remote MP4 yet
+        }
+      })
+    )
+    setRenders(probes)
+
+    // Load thumbnails for completed or populated episodes
     const thumbs = {}
     for (const ep of eps) {
-      if (ep.status === "completed") {
+      if (ep.status === "completed" || episodeIsPopulated(ep)) {
         const img = await loadImage(ep.id, 0)
         if (img?.url) {
           thumbs[ep.id] = img.url
@@ -474,7 +495,18 @@ export default function SeriesDetailPage({ params }) {
 
   const theme = getThemeById(series.theme)
   const nextEpisodeNumber = episodes.length + 1
-  const inProgressEpisode = episodes.find((e) => e.status !== "completed")
+  const primary = seriesPrimaryAction(episodes, renders)
+  const watchEpisode = primary.type === "watch" ? primary.episode : null
+
+  function handleWatchClick(event) {
+    if (primary.type !== "watch") return
+    event.preventDefault()
+    document.getElementById("episode-watch")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    const player = watchPlayerRef.current
+    if (player) {
+      player.play?.().catch(() => {})
+    }
+  }
 
   // Arc grouping — 15 episodes per arc (adjust if needed)
   const ARC_SIZE = 15
@@ -551,12 +583,27 @@ export default function SeriesDetailPage({ params }) {
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">Episodes</h2>
-            {inProgressEpisode ? (
-              <Link
-                href={`/admin/series/${seriesId}/episode/${inProgressEpisode.episodeNumber}`}
+            {primary.type === "watch" ? (
+              <a
+                href="#episode-watch"
+                onClick={handleWatchClick}
                 className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
               >
-                Continue Episode {inProgressEpisode.episodeNumber}
+                Watch Episode {primary.episode.episodeNumber}
+              </a>
+            ) : primary.type === "view" ? (
+              <Link
+                href={`/admin/series/${seriesId}/episode/${primary.episode.episodeNumber}`}
+                className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                View Episode {primary.episode.episodeNumber}
+              </Link>
+            ) : primary.type === "continue" ? (
+              <Link
+                href={`/admin/series/${seriesId}/episode/${primary.episode.episodeNumber}`}
+                className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Continue Episode {primary.episode.episodeNumber}
               </Link>
             ) : (
               <Link
@@ -567,6 +614,30 @@ export default function SeriesDetailPage({ params }) {
               </Link>
             )}
           </div>
+
+          {watchEpisode && renders[watchEpisode.id]?.url ? (
+            <div id="episode-watch" className="mb-6 p-4 bg-surface border border-border rounded-xl max-w-sm">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold">
+                  {watchEpisode.title || `Episode ${watchEpisode.episodeNumber}`}
+                </h2>
+                <Link
+                  href={`/admin/series/${seriesId}/episode/${watchEpisode.episodeNumber}`}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Open episode
+                </Link>
+              </div>
+              <video
+                ref={watchPlayerRef}
+                src={`/api/admin/episodes/${watchEpisode.id}/video?play=1`}
+                controls
+                playsInline
+                className="w-full bg-black rounded-lg"
+                style={{ aspectRatio: "9 / 16" }}
+              />
+            </div>
+          ) : null}
 
           {series.lastCliffhanger && (
             <div className="mb-4 p-4 bg-surface-2 border border-border rounded-xl">
@@ -707,6 +778,7 @@ export default function SeriesDetailPage({ params }) {
                           ep={ep}
                           seriesId={seriesId}
                           thumbnail={thumbnails[ep.id]}
+                          hasRender={Boolean(renders[ep.id])}
                           toggling={togglingEp === ep.id}
                           onTogglePublish={() => handleToggleEpisodePublish(ep)}
                           onDelete={() => setDeleteTarget(ep)}
@@ -725,8 +797,9 @@ export default function SeriesDetailPage({ params }) {
                   key={ep.id}
                   ep={ep}
                   seriesId={seriesId}
-                  thumbnail={thumbnails[ep.id]}
-                  toggling={togglingEp === ep.id}
+                          thumbnail={thumbnails[ep.id]}
+                          hasRender={Boolean(renders[ep.id])}
+                          toggling={togglingEp === ep.id}
                   onTogglePublish={() => handleToggleEpisodePublish(ep)}
                   onDelete={() => setDeleteTarget(ep)}
                 />
