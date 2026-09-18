@@ -1,6 +1,4 @@
 export const dynamic = "force-dynamic";
-import { bundle } from "@remotion/bundler"
-import { renderMedia, selectComposition } from "@remotion/renderer"
 import { requireAdmin } from "@/lib/adminAuth"
 import { after } from "next/server"
 import path from "path"
@@ -99,6 +97,9 @@ async function runExport(jobDir, { scenes, imageUrls, language, isRtl, watermark
   let bundleLocation = null
   try {
     writeStatus(jobDir, { status: "rendering" })
+
+    const { bundle } = await import("@remotion/bundler")
+    const { renderMedia, selectComposition } = await import("@remotion/renderer")
 
     const outputPath = path.join(jobDir, `episode-${language}.mp4`)
     const entryPoint = path.resolve(process.cwd(), "remotion/index.js")
