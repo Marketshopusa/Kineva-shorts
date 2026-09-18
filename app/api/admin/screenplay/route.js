@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { requireAdmin } from "@/lib/adminAuth"
+import { callLLM } from "@/lib/llm"
 import { buildScreenplaySystemPrompt, buildScreenplayUserPrompt } from "@/lib/buildClaudePrompt"
 import { jsonRailError } from "@/lib/http-rail-error"
 
