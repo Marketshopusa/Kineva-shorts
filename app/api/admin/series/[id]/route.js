@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import prisma from "@/lib/prisma"
 import { requireAdmin } from "@/lib/adminAuth"
-import { normalizeRating, resolveContentRail, inspectRailReadiness } from "@/lib/content-rails"
+import { normalizeRating, resolveContentRail, inspectRailReadiness, withEffectiveImageRail } from "@/lib/content-rails"
 import { railPayload } from "@/lib/series-rail"
 
 const ALLOWED_SERIES_FIELDS = [
@@ -32,7 +32,7 @@ export async function GET(request, { params }) {
 
     if (!series) return Response.json({ error: "Not found" }, { status: 404 })
 
-    const rail = resolveContentRail(series.contentRating)
+    const rail = withEffectiveImageRail(resolveContentRail(series.contentRating))
     return Response.json({ ...series, contentRail: railPayload(rail, inspectRailReadiness(rail)) })
   } catch (error) {
     console.error("Series GET error:", error)
