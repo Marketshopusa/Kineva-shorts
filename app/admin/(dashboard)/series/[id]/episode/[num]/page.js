@@ -14,6 +14,7 @@ import { normalizeDubScenes, recalcDefaultDubLang, selectDubForLang } from "@/li
 import { getTrackById, AUDIO_TRACKS } from "@/config/audioTracks"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import SubtitleEditor from "@/components/ui/SubtitleEditor"
+import StoryboardFields from "@/components/ui/StoryboardFields"
 import SharePanel from "@/components/ui/SharePanel"
 import { episodeIsPopulated, shouldRedirectToWizard } from "@/lib/episode-watch"
 
@@ -656,6 +657,7 @@ export default function EpisodeDetailPage({ params }) {
           regeneratingStatuses={visuals.statuses}
           imageProvider={imageProvider}
           onImageProviderChange={(p) => { userPickedImageProvider.current = true; setImageProvider(p) }}
+          characters={characters}
         />
       )}
 
@@ -690,7 +692,7 @@ export default function EpisodeDetailPage({ params }) {
   )
 }
 
-function ScenesTab({ scenes, imageUrls, languages, onUpdate, onRegenerate, onRegenerateAll, regeneratingStatuses, imageProvider, onImageProviderChange }) {
+function ScenesTab({ scenes, imageUrls, languages, onUpdate, onRegenerate, onRegenerateAll, regeneratingStatuses, imageProvider, onImageProviderChange, characters = [] }) {
   const [activeLangs, setActiveLangs] = useState({})
 
   function getLang(i) {
@@ -846,6 +848,12 @@ function ScenesTab({ scenes, imageUrls, languages, onUpdate, onRegenerate, onReg
                     ))}
                   </div>
                 )}
+
+                <StoryboardFields
+                  scene={scene}
+                  characters={characters}
+                  onChange={(updates) => onUpdate(i, updates)}
+                />
 
                 {/* Subtitle Editor */}
                 <SubtitleEditor

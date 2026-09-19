@@ -1,6 +1,7 @@
 "use client"
 
 import { Lock, X } from "lucide-react"
+import { characterReferenceDisplaySrc, visualIdentityStatus } from "@/lib/character-identity"
 
 const ROLE_COLORS = {
   protagonist: "text-green-400",
@@ -18,8 +19,10 @@ async function clearReference(charId, onClear) {
   }
 }
 
-export default function CharacterCard({ character, compact = false, onEdit, onDelete, onReferenceCleared }) {
+export default function CharacterCard({ character, compact = false, onEdit, onDelete, onReferenceCleared, onReplaceReference }) {
   const roleColor = ROLE_COLORS[character.role] || "text-text-muted"
+  const locked = visualIdentityStatus(character) === "LOCKED"
+  const thumb = characterReferenceDisplaySrc(character)
 
   if (compact) {
     return (
@@ -27,11 +30,9 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
         <div className="flex items-center justify-between">
           <div className="font-medium text-sm">{character.name}</div>
           <div className="flex items-center gap-1.5">
-            {character.referenceImageUrl && (
-              <span title="Visual reference locked" className="text-[10px] flex items-center gap-0.5 text-green-400">
-                <Lock className="w-2.5 h-2.5" /> ref
-              </span>
-            )}
+            <span className={`text-[10px] font-semibold ${locked ? "text-green-400" : "text-text-muted"}`}>
+              {locked ? "LOCKED" : "NOT LOCKED"}
+            </span>
             <span className={`text-xs ${roleColor} capitalize`}>{character.role}</span>
           </div>
         </div>
@@ -53,11 +54,11 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3">
           {/* Reference image thumbnail */}
-          {character.referenceImageUrl && (
+          {locked && thumb && (
             <div className="relative shrink-0 group">
               <div className="w-12 h-[85px] rounded-lg overflow-hidden border border-green-500/30">
                 <img
-                  src={character.referenceImageUrl}
+                  src={thumb}
                   alt={`${character.name} reference`}
                   className="w-full h-full object-cover"
                 />
@@ -79,11 +80,19 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
           <div>
             <h3 className="font-semibold text-lg">{character.name}</h3>
             <span className={`text-sm ${roleColor} capitalize`}>{character.role}</span>
-            {character.referenceImageUrl && (
-              <div className="text-[10px] text-green-400 flex items-center gap-1 mt-0.5">
-                <Lock className="w-2.5 h-2.5" />
-                Visual reference locked (ep. {character.referenceEpisode || "?"})
-              </div>
+            <div className={`text-[10px] flex items-center gap-1 mt-0.5 font-semibold ${locked ? "text-green-400" : "text-text-muted"}`}>
+              {locked && <Lock className="w-2.5 h-2.5" />}
+              Visual Identity {locked ? "LOCKED" : "NOT LOCKED"}
+              {locked && character.referenceEpisode ? ` (ep. ${character.referenceEpisode})` : ""}
+            </div>
+            {onReplaceReference && (
+              <button
+                type="button"
+                onClick={() => onReplaceReference(character)}
+                className="text-[10px] text-accent hover:text-accent-hover mt-1"
+              >
+                {locked ? "Replace Reference" : "Set as Character Reference"}
+              </button>
             )}
           </div>
         </div>

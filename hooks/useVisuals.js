@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { apiFetch } from "@/lib/api"
-import { buildImagePrompt, getSceneCharacterReferences } from "@/lib/buildImagePrompt"
+import { buildSceneVisualPrompt } from "@/lib/buildSceneVisualPrompt"
 import { resolveContentRail } from "@/lib/content-rails"
 
 export function useVisuals() {
@@ -22,21 +22,8 @@ export function useVisuals() {
       const rail = resolveContentRail(series.contentRating)
       const provider = rail.imageProvider
 
-      let visualDescription = scene.visual_description
-      const promptData = await apiFetch("/api/admin/generate-prompt", {
-        method: "POST",
-        body: JSON.stringify({
-          scene_text: scene[`text_${series.languages?.[0] || "en"}`] || "",
-          scene_type: scene.type,
-          theme: series.theme,
-          visual_description: scene.visual_description,
-          seriesId: series.id,
-        }),
-      })
-      visualDescription = promptData.image_prompt
-
-      const fullPrompt = buildImagePrompt({
-        scene: { ...scene, visual_description: visualDescription },
+      const planned = buildSceneVisualPrompt({
+        scene,
         characters,
         series,
         maxLength: 0,
@@ -46,25 +33,25 @@ export function useVisuals() {
         ? "/api/admin/generate-image-fal"
         : "/api/admin/generate-image-gemini"
 
-      const characterReferences = provider === "gemini"
-        ? getSceneCharacterReferences(scene, characters)
-        : []
-
       const imageData = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify({
-          prompt: fullPrompt,
+          prompt: planned.prompt,
           seriesId: series.id,
           provider,
-          ...(characterReferences.length > 0 ? { characterReferences } : {}),
+          referenceImageUrl: planned.referenceImageUrl,
+          aspectRatio: "9:16",
+          metadata: { sceneIndex, characterIds: planned.characterIds },
         }),
       })
 
       const imageEntry = {
         url: imageData.image_url,
-        prompt: fullPrompt,
+        prompt: planned.prompt,
         approved: autoApprove,
         provider,
+        referenceImageUrl: planned.referenceImageUrl,
+        route: planned.route,
       }
       setImages((prev) => ({ ...prev, [sceneIndex]: imageEntry }))
       setStatus(sceneIndex, "done")
@@ -78,7 +65,7 @@ export function useVisuals() {
   async function generateAll(scenes, characters, series, provider = "gemini", autoApprove = false) {
     const CONCURRENCY = 4
     const queue = scenes.map((scene, i) => ({ scene, index: i }))
-    const active = new Map() // id -> promise
+    const active = new Map()
     let nextId = 0
 
     while (queue.length > 0 || active.size > 0) {

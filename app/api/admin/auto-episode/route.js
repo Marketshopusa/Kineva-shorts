@@ -4,10 +4,11 @@ import { requireAdmin } from "@/lib/adminAuth"
 import { getAIConfig } from "@/lib/getAIConfig"
 import { callLLM } from "@/lib/llm"
 import { buildScreenplaySystemPrompt, buildScreenplayUserPrompt, buildSummaryPrompt } from "@/lib/buildClaudePrompt"
-import { buildImagePrompt } from "@/lib/buildImagePrompt"
+import { buildSceneVisualPrompt } from "@/lib/buildSceneVisualPrompt"
 import { getVisualStyle } from "@/config/visualStyles"
 import { loadSeriesRail } from "@/lib/series-rail"
-import { generateStillForRail } from "@/lib/still-for-rail"
+import { generateStill } from "@/lib/still-for-rail"
+import prisma from "@/lib/prisma"
 import fs from "fs/promises"
 import path from "path"
 
@@ -285,14 +286,21 @@ ${scoringPrompt}`,
           const imagePromptText = prewrittenScreenplay
             ? (scene.visual_description || "")
             : await generatePromptForScene(scene, series)
-          const fullPrompt = buildImagePrompt({
+          const planned = buildSceneVisualPrompt({
             scene: { ...scene, visual_description: imagePromptText },
             characters,
             series,
             maxLength: 1500,
           })
-          const { dataUrl } = await generateStillForRail(rail, fullPrompt, config)
-          await saveImageToDisk(episodeId, index, dataUrl, fullPrompt)
+          const { dataUrl } = await generateStill({
+            rail,
+            config,
+            prompt: planned.prompt,
+            referenceImageUrl: planned.referenceImageUrl,
+            aspectRatio: "9:16",
+            metadata: { episodeId, sceneIndex: index, characterIds: planned.characterIds },
+          })
+          await saveImageToDisk(episodeId, index, dataUrl, planned.prompt)
           doneCount++
           send("image_done", { index, total: 6, done: doneCount })
           send("stage", { stage: "images", message: `Generating images (${doneCount}/6)...` })

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import SubtitleEditor from "@/components/ui/SubtitleEditor"
+import StoryboardFields from "@/components/ui/StoryboardFields"
 
 const TYPE_COLORS = {
   HOOK: "bg-red-500/20 text-red-400",
@@ -12,7 +13,7 @@ const TYPE_COLORS = {
   CLIFFHANGER: "bg-pink-500/20 text-pink-400",
 }
 
-export default function SceneCard({ scene, index, languages, onUpdate }) {
+export default function SceneCard({ scene, index, languages, onUpdate, characters = [] }) {
   const [activeLang, setActiveLang] = useState(languages[0] || "en")
   const [showSubtitles, setShowSubtitles] = useState(false)
 
@@ -94,6 +95,12 @@ export default function SceneCard({ scene, index, languages, onUpdate }) {
           ))}
         </div>
       )}
+
+      <StoryboardFields
+        scene={scene}
+        characters={characters}
+        onChange={(updates) => onUpdate(index, updates)}
+      />
 
       {/* Subtitle toggle */}
       <button

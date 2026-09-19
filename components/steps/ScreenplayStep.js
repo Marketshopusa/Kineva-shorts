@@ -151,6 +151,7 @@ export default function ScreenplayStep({
             index={i}
             languages={languages}
             onUpdate={onUpdateScene}
+            characters={characters}
           />
         ))}
       </div>

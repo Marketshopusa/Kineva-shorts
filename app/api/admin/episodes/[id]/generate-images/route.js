@@ -1,11 +1,12 @@
 export const dynamic = "force-dynamic"
 import { requireAdmin } from "@/lib/adminAuth"
 import { getAIConfig } from "@/lib/getAIConfig"
-import { buildImagePrompt } from "@/lib/buildImagePrompt"
+import { buildSceneVisualPrompt } from "@/lib/buildSceneVisualPrompt"
 import prisma from "@/lib/prisma"
 import { loadSeriesRail, railPayload } from "@/lib/series-rail"
-import { generateStillForRail } from "@/lib/still-for-rail"
+import { generateStill } from "@/lib/still-for-rail"
 import { uploadBuffer, imagePath, IMAGES_BUCKET } from "@/lib/supabase-storage"
+import { selectScenesToGenerate } from "@/lib/storyboard"
 
 async function persistStill(episodeId, sceneIndex, dataUrl, promptText) {
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "")
@@ -30,6 +31,7 @@ export async function POST(request, { params }) {
 
   const body = await request.json().catch(() => ({}))
   const onlyMissing = body.onlyMissing !== false
+  const sceneIndex = body.sceneIndex
   const config = await getAIConfig()
 
   const episode = await prisma.episode.findUnique({
@@ -48,9 +50,12 @@ export async function POST(request, { params }) {
 
   const existingIndexes = new Set((episode.images || []).map((img) => img.sceneIndex))
 
-  const queue = scenes
-    .map((scene, index) => ({ scene, index }))
-    .filter(({ index }) => !onlyMissing || !existingIndexes.has(index))
+  let queue
+  try {
+    queue = selectScenesToGenerate(scenes, existingIndexes, { onlyMissing, sceneIndex, sceneIndexes: body.sceneIndexes })
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 400 })
+  }
 
   if (queue.length === 0) {
     return Response.json({
@@ -69,13 +74,21 @@ export async function POST(request, { params }) {
     provider,
     usedLeonardo: false,
     contentRail: railPayload(rail, readiness),
+    indexes: queue.map((item) => item.index),
   }
 
   async function generateOne({ scene, index }) {
-    const fullPrompt = buildImagePrompt({ scene, characters, series, maxLength: 1500 })
-    const { dataUrl, provider: used } = await generateStillForRail(rail, fullPrompt, config)
+    const planned = buildSceneVisualPrompt({ scene, characters, series, maxLength: 1500 })
+    const { dataUrl, provider: used } = await generateStill({
+      rail,
+      config,
+      prompt: planned.prompt,
+      referenceImageUrl: planned.referenceImageUrl,
+      aspectRatio: "9:16",
+      metadata: { episodeId, sceneIndex: index, characterIds: planned.characterIds },
+    })
     if (used === "leonardo") results.usedLeonardo = true
-    await persistStill(episodeId, index, dataUrl, fullPrompt)
+    await persistStill(episodeId, index, dataUrl, planned.prompt)
     results.generated++
   }
 
@@ -92,6 +105,9 @@ export async function POST(request, { params }) {
       const topUp = /FAL_TOP_UP_REQUIRED|BLOCKED_BALANCE/i.test(String(err?.message || ""))
       if (topUp) {
         return Response.json({ ...results, episodeId, total: scenes.length, code: "FAL_TOP_UP_REQUIRED" }, { status: 402 })
+      }
+      if (err?.code === "REFERENCE_AWARE_FAILED" || /REFERENCE_AWARE_FAILED/.test(String(err?.message || ""))) {
+        return Response.json({ ...results, episodeId, total: scenes.length, code: "REFERENCE_AWARE_FAILED" }, { status: 502 })
       }
       break
     }
