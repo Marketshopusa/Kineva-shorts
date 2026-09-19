@@ -5,6 +5,7 @@ import { buildImagePrompt } from "@/lib/buildImagePrompt"
 import prisma from "@/lib/prisma"
 import { loadSeriesRail, railPayload } from "@/lib/series-rail"
 import { generateStillForRail } from "@/lib/still-for-rail"
+import { falBlockedCode } from "@/lib/providers/images/fal.js"
 import { uploadBuffer, imagePath, IMAGES_BUCKET } from "@/lib/supabase-storage"
 
 async function persistStill(episodeId, sceneIndex, dataUrl, promptText) {
@@ -89,9 +90,9 @@ export async function POST(request, { params }) {
       if (quota) {
         return Response.json({ ...results, episodeId, total: scenes.length, code: "GEMINI_IMAGE_BLOCKED_QUOTA" }, { status: 429 })
       }
-      const topUp = /FAL_TOP_UP_REQUIRED|BLOCKED_BALANCE/i.test(String(err?.message || ""))
-      if (topUp) {
-        return Response.json({ ...results, episodeId, total: scenes.length, code: "FAL_TOP_UP_REQUIRED" }, { status: 402 })
+      const falCode = falBlockedCode(err)
+      if (falCode) {
+        return Response.json({ ...results, episodeId, total: scenes.length, code: falCode }, { status: 402 })
       }
       break
     }

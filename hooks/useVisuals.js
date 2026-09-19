@@ -20,7 +20,7 @@ export function useVisuals() {
 
     try {
       const rail = resolveContentRail(series.contentRating)
-      const provider = rail.imageProvider
+      const provider = series.contentRail?.imageProvider || rail.imageProvider
 
       let visualDescription = scene.visual_description
       const promptData = await apiFetch("/api/admin/generate-prompt", {
