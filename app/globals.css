@@ -191,3 +191,25 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Cinematic episode poster fallback — CSS only, $0, no generated stills */
+.kineva-episode-fallback {
+  background:
+    radial-gradient(120% 80% at 8% 0%, rgba(122, 41, 72, 0.55) 0%, transparent 58%),
+    radial-gradient(90% 70% at 100% 110%, rgba(46, 196, 182, 0.22) 0%, transparent 52%),
+    linear-gradient(165deg, #0B1020 0%, #141A2E 48%, #7A2948 160%);
+}
+.kineva-episode-fallback::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(232, 184, 109, 0.12) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.85));
+}
+.kineva-episode-fallback::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 16, 32, 0.05) 30%, rgba(11, 16, 32, 0.82) 100%);
+}

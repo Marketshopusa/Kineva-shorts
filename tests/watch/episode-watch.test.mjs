@@ -7,6 +7,12 @@ import {
   shouldRedirectToWizard,
   episodeCardAction,
   seriesPrimaryAction,
+  episodeDurationSec,
+  episodeHasAudio,
+  isUsableEpisodeStill,
+  episodeBlurb,
+  episodeCardCtaLabel,
+  episodePipelineLabels,
 } from "../../lib/episode-watch.js"
 
 const populated = {
@@ -40,4 +46,71 @@ test("series primary CTA is Continue only when nothing is populated", () => {
   const ep = { id: 3, episodeNumber: 1, status: "setup" }
   const action = seriesPrimaryAction([ep], {})
   assert.equal(action.type, "continue")
+})
+
+const visualsPending = {
+  id: 10,
+  episodeNumber: 1,
+  title: "El mensaje",
+  status: "visuals",
+  summary: "Elena recibe una llamada imposible.",
+  screenplay: {
+    scenes: [
+      { duration_sec: 8, text_es: "Elena escucha el mensaje otra vez." },
+      { duration_sec: 10 },
+      { duration_sec: 7 },
+      { duration_sec: 9 },
+      { duration_sec: 6 },
+      { duration_sec: 8 },
+    ],
+  },
+}
+
+test("episode without still or video stays Open Episode with pending visuals", () => {
+  assert.equal(episodeCardAction(visualsPending, false), "view")
+  assert.equal(episodeCardCtaLabel("view"), "Open Episode")
+  assert.equal(sceneCount(visualsPending), 6)
+  assert.equal(episodeDurationSec(visualsPending), 48)
+  assert.equal(episodeHasAudio(visualsPending), false)
+  assert.equal(isUsableEpisodeStill(null), false)
+  const labels = episodePipelineLabels({ hasStill: false, hasAudio: false, hasRender: false })
+  assert.equal(labels.visual, "Visuals pending")
+  assert.equal(labels.video, "Video pending")
+  assert.equal(episodeBlurb(visualsPending), "Elena recibe una llamada imposible.")
+})
+
+test("episode with audio but no still or video does not show Watch", () => {
+  const dubbed = {
+    ...visualsPending,
+    dubScenes: { es: { "0": { url: "episodes/2/1/0.mp3", durationSec: 8 } } },
+  }
+  assert.equal(episodeHasAudio(dubbed), true)
+  assert.equal(episodeCardAction(dubbed, false), "view")
+  assert.notEqual(episodeCardCtaLabel(episodeCardAction(dubbed, false)), "Watch Episode")
+  assert.equal(episodePipelineLabels({ hasStill: false, hasAudio: true, hasRender: false }).audio, "Audio ready")
+})
+
+test("usable still is accepted and test stills are rejected", () => {
+  assert.equal(isUsableEpisodeStill("/api/admin/images/12"), true)
+  assert.equal(isUsableEpisodeStill("/media/test-stills/elena.png"), false)
+  assert.equal(isUsableEpisodeStill("TEST STILL"), false)
+})
+
+test("MP4 unlocks Watch Episode CTA", () => {
+  assert.equal(episodeCardAction(populated, true), "watch")
+  assert.equal(episodeCardCtaLabel("watch"), "Watch Episode")
+  assert.equal(episodePipelineLabels({ hasStill: true, hasAudio: true, hasRender: true }).video, "Video ready")
+})
+
+test("empty in-progress episode CTA is Continue Visuals", () => {
+  assert.equal(episodeCardCtaLabel("continue"), "Continue Visuals")
+})
+
+test("multiple populated episodes keep independent watch/view actions", () => {
+  const second = { ...populated, id: 2, episodeNumber: 2, title: "La respuesta" }
+  const action = seriesPrimaryAction([visualsPending, second], { 2: { url: "https://example.test/ep2.mp4" } })
+  assert.equal(action.type, "watch")
+  assert.equal(action.episode.id, 2)
+  assert.equal(episodeCardAction(visualsPending, false), "view")
+  assert.equal(episodeCardAction(second, true), "watch")
 })

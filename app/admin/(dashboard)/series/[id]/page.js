@@ -5,89 +5,11 @@ import Link from "next/link"
 import { loadSeries, loadEpisodes, loadCharacters, deleteEpisode, exportSeriesBackup, loadImage, updateSeries } from "@/lib/storage-api"
 import { getThemeById } from "@/config/themes"
 import CharacterCard from "@/components/characters/CharacterCard"
+import EpisodeCard from "@/components/series/EpisodeCard"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import { Pin, Check, Trash2, AlertTriangle, ChevronDown, Activity, Eye, EyeOff } from "lucide-react"
 import ConfirmDialog from "@/components/ui/ConfirmDialog"
-import { episodeCardAction, episodeIsPopulated, seriesPrimaryAction } from "@/lib/episode-watch"
-
-// ─── Episode Card ─────────────────────────────────────────────────────────────
-
-function EpisodeCard({ ep, seriesId, thumbnail, toggling, onTogglePublish, onDelete, hasRender }) {
-  const isCompleted = ep.status === "completed"
-  const action = episodeCardAction(ep, hasRender)
-  const watchable = action === "watch"
-  return (
-    <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-xl hover:border-border/80 transition-colors">
-      <div className="flex items-center gap-3">
-        {thumbnail ? (
-          <div className="w-8 h-[57px] rounded-md overflow-hidden flex-shrink-0">
-            <img src={thumbnail} alt="" className="w-full h-full object-cover" />
-          </div>
-        ) : (
-          <div className="w-8 h-8 rounded-md bg-surface-2 flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">
-            {ep.episodeNumber}
-          </div>
-        )}
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{ep.title || `Episode ${ep.episodeNumber}`}</span>
-            {isCompleted && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                ep.published
-                  ? "bg-green-500/15 text-green-400"
-                  : "bg-surface-2 text-text-muted"
-              }`}>
-                {ep.published ? "Published" : "Draft"}
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-text-muted">
-            {isCompleted ? "Completed" : watchable ? "Ready to watch" : `In progress (${ep.status})`}
-          </div>
-          {ep.summary && (
-            <p className="text-xs text-text-muted mt-0.5 line-clamp-1 max-w-sm">{ep.summary}</p>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Publish toggle — only for completed episodes */}
-        {isCompleted && (
-          <button
-            disabled={toggling}
-            onClick={onTogglePublish}
-            title={ep.published ? "Unpublish" : "Publish"}
-            className={`p-1.5 rounded-lg transition-colors disabled:opacity-50 ${
-              ep.published
-                ? "text-green-400 hover:bg-surface-2"
-                : "text-text-muted hover:text-green-400 hover:bg-surface-2"
-            }`}
-          >
-            {toggling ? (
-              <span className="text-xs">…</span>
-            ) : ep.published ? (
-              <Eye className="w-4 h-4" />
-            ) : (
-              <EyeOff className="w-4 h-4" />
-            )}
-          </button>
-        )}
-        <Link
-          href={watchable ? "#episode-watch" : `/admin/series/${seriesId}/episode/${ep.episodeNumber}`}
-          className="text-xs text-accent hover:text-accent-hover transition-colors px-2 py-1"
-        >
-          {action === "watch" ? "Watch" : action === "view" ? "View" : "Continue"}
-        </Link>
-        <button
-          onClick={onDelete}
-          className="p-1.5 text-text-muted hover:text-red-400 hover:bg-surface-2 rounded-lg transition-colors"
-          title="Delete"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
-  )
-}
+import { episodeCardCtaLabel, episodeIsPopulated, isUsableEpisodeStill, seriesPrimaryAction } from "@/lib/episode-watch"
 
 // ─── Story Health Panel ────────────────────────────────────────────────────────
 
@@ -398,7 +320,7 @@ export default function SeriesDetailPage({ params }) {
     for (const ep of eps) {
       if (ep.status === "completed" || episodeIsPopulated(ep)) {
         const img = await loadImage(ep.id, 0)
-        if (img?.url) {
+        if (isUsableEpisodeStill(img?.url)) {
           thumbs[ep.id] = img.url
         }
       }
@@ -589,21 +511,21 @@ export default function SeriesDetailPage({ params }) {
                 onClick={handleWatchClick}
                 className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
               >
-                Watch Episode {primary.episode.episodeNumber}
+                {episodeCardCtaLabel("watch")} {primary.episode.episodeNumber}
               </a>
             ) : primary.type === "view" ? (
               <Link
                 href={`/admin/series/${seriesId}/episode/${primary.episode.episodeNumber}`}
                 className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
               >
-                View Episode {primary.episode.episodeNumber}
+                {episodeCardCtaLabel("view")} {primary.episode.episodeNumber}
               </Link>
             ) : primary.type === "continue" ? (
               <Link
                 href={`/admin/series/${seriesId}/episode/${primary.episode.episodeNumber}`}
                 className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
               >
-                Continue Episode {primary.episode.episodeNumber}
+                {episodeCardCtaLabel("continue")} {primary.episode.episodeNumber}
               </Link>
             ) : (
               <Link
@@ -771,7 +693,7 @@ export default function SeriesDetailPage({ params }) {
                     </div>
 
                     {/* Episode cards */}
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {arc.episodes.map((ep) => (
                         <EpisodeCard
                           key={ep.id}
@@ -782,6 +704,7 @@ export default function SeriesDetailPage({ params }) {
                           toggling={togglingEp === ep.id}
                           onTogglePublish={() => handleToggleEpisodePublish(ep)}
                           onDelete={() => setDeleteTarget(ep)}
+                          onWatchClick={handleWatchClick}
                         />
                       ))}
                     </div>
@@ -791,17 +714,18 @@ export default function SeriesDetailPage({ params }) {
             </div>
           ) : (
             /* ── Flat list (few episodes, no arc grouping) ────────── */
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {episodes.map((ep) => (
                 <EpisodeCard
                   key={ep.id}
                   ep={ep}
                   seriesId={seriesId}
-                          thumbnail={thumbnails[ep.id]}
-                          hasRender={Boolean(renders[ep.id])}
-                          toggling={togglingEp === ep.id}
+                  thumbnail={thumbnails[ep.id]}
+                  hasRender={Boolean(renders[ep.id])}
+                  toggling={togglingEp === ep.id}
                   onTogglePublish={() => handleToggleEpisodePublish(ep)}
                   onDelete={() => setDeleteTarget(ep)}
+                  onWatchClick={handleWatchClick}
                 />
               ))}
             </div>
