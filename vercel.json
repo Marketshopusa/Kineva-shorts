@@ -3,7 +3,7 @@
   "framework": "nextjs",
   "functions": {
     "api/edge-tts.py": {
-      "runtime": "@vercel/python@14.0.0",
+      "runtime": "@vercel/python@14.2.0",
       "maxDuration": 60,
       "excludeFiles": "{node_modules/**,.next/**,public/**,uploads/**,remotion/**,tests/**,mcp/**,.git/**}"
     }
