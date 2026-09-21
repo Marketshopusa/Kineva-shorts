@@ -21,12 +21,15 @@ import { persistCharacterCandidate } from "@/lib/character-reference-storage.js"
 import { loadElenaMasterPayload, resolveElenaVarelaFromDb } from "@/lib/elena-varela-master-server.js"
 
 function falBalanceReport(balance) {
-  if (!balance?.ok) return { status: "UNKNOWN", remainingUsd: null }
+  if (!balance?.ok) return { status: "UNKNOWN", remainingUsd: null, detail: balance?.detail || null }
   if (balance.remainingUsd != null && balance.remainingUsd <= 0) {
-    return { status: "TOP_UP_REQUIRED", remainingUsd: balance.remainingUsd }
+    return { status: "TOP_UP_REQUIRED", remainingUsd: balance.remainingUsd, detail: balance.detail || null }
   }
-  if (balance.remainingUsd == null) return { status: "AVAILABLE", remainingUsd: null }
-  return { status: "AVAILABLE", remainingUsd: balance.remainingUsd }
+  return {
+    status: "AVAILABLE",
+    remainingUsd: balance.remainingUsd ?? null,
+    detail: balance.detail || null,
+  }
 }
 
 function masterConstants() {

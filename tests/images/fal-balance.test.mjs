@@ -67,3 +67,27 @@ test("checkFalBalance reads credits.current_balance from billing expand", async 
   const bal = await checkFalBalance({ FAL_KEY: "x" }, fetchFn)
   assert.equal(bal.remainingUsd, 8.25)
 })
+
+test("unreadable billing without a zero wallet does not block generate", async () => {
+  let generateCalls = 0
+  const fetchFn = async (url) => {
+    if (String(url).includes("billing") || String(url).includes("platform/account")) {
+      return jsonResponse(404, { error: "not found" })
+    }
+    if (String(url).includes("fal.run")) {
+      generateCalls += 1
+      return jsonResponse(200, { images: [{ url: "https://cdn.example/still.jpg" }] })
+    }
+    if (String(url).includes("cdn.example")) {
+      return new Response(Buffer.from("fake-jpeg"), { status: 200, headers: { "Content-Type": "image/jpeg" } })
+    }
+    return jsonResponse(404, {})
+  }
+  const { dataUrl } = await generateFalStill(
+    "cinematic still",
+    { FAL_KEY: "x", FAL_ALLOW_GENERATE: "1" },
+    fetchFn,
+  )
+  assert.equal(generateCalls, 1)
+  assert.equal(dataUrl.startsWith("data:image/jpeg;base64,"), true)
+})
