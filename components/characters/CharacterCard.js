@@ -2,6 +2,7 @@
 
 import { Lock, X } from "lucide-react"
 import { characterReferenceDisplaySrc, visualIdentityStatus } from "@/lib/character-identity"
+import { characterMasterImageSrc } from "@/lib/character-master.js"
 
 const ROLE_COLORS = {
   protagonist: "text-green-400",
@@ -19,32 +20,72 @@ async function clearReference(charId, onClear) {
   }
 }
 
+function CandidatePortrait({ character, compact }) {
+  const src = character.masterCandidateImageSrc || characterMasterImageSrc(character.id)
+  if (compact) {
+    return (
+      <div className="relative shrink-0">
+        <div className="w-10 h-[71px] rounded-lg overflow-hidden border border-amber-400/40">
+          <img
+            src={src}
+            alt={`${character.name} master candidate`}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="relative shrink-0">
+      <div className="w-28 h-[199px] rounded-xl overflow-hidden border border-amber-400/40 bg-surface-2">
+        <img
+          src={src}
+          alt={`${character.name} character master candidate`}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-amber-500/90 text-[10px] font-semibold text-black">
+        PENDING APPROVAL
+      </div>
+    </div>
+  )
+}
+
 export default function CharacterCard({ character, compact = false, onEdit, onDelete, onReferenceCleared, onReplaceReference }) {
   const roleColor = ROLE_COLORS[character.role] || "text-text-muted"
   const locked = visualIdentityStatus(character) === "LOCKED"
   const thumb = characterReferenceDisplaySrc(character)
+  const pendingCandidate = !locked && !!character.pendingMasterApproval
 
   if (compact) {
     return (
       <div className="p-3 bg-surface border border-border rounded-xl">
-        <div className="flex items-center justify-between">
-          <div className="font-medium text-sm">{character.name}</div>
-          <div className="flex items-center gap-1.5">
-            <span className={`text-[10px] font-semibold ${locked ? "text-green-400" : "text-text-muted"}`}>
-              {locked ? "LOCKED" : "NOT LOCKED"}
-            </span>
-            <span className={`text-xs ${roleColor} capitalize`}>{character.role}</span>
+        <div className="flex items-start gap-3">
+          {pendingCandidate && <CandidatePortrait character={character} compact />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium text-sm truncate">{character.name}</div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`text-[10px] font-semibold ${locked ? "text-green-400" : "text-text-muted"}`}>
+                  {locked ? "LOCKED" : "NOT LOCKED"}
+                </span>
+                <span className={`text-xs ${roleColor} capitalize`}>{character.role}</span>
+              </div>
+            </div>
+            {pendingCandidate && (
+              <div className="text-[10px] font-semibold text-amber-400 mt-1">PENDING APPROVAL</div>
+            )}
+            {character.personality?.traits?.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {character.personality.traits.slice(0, 3).map((trait) => (
+                  <span key={trait} className="text-xs bg-surface-2 px-2 py-0.5 rounded text-text-muted">
+                    {trait}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        {character.personality?.traits?.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {character.personality.traits.slice(0, 3).map((trait) => (
-              <span key={trait} className="text-xs bg-surface-2 px-2 py-0.5 rounded text-text-muted">
-                {trait}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     )
   }
@@ -53,7 +94,6 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
     <div className="p-5 bg-surface border border-border rounded-xl">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3">
-          {/* Reference image thumbnail */}
           {locked && thumb && (
             <div className="relative shrink-0 group">
               <div className="w-12 h-[85px] rounded-lg overflow-hidden border border-green-500/30">
@@ -77,6 +117,7 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
               )}
             </div>
           )}
+          {pendingCandidate && <CandidatePortrait character={character} compact={false} />}
           <div>
             <h3 className="font-semibold text-lg">{character.name}</h3>
             <span className={`text-sm ${roleColor} capitalize`}>{character.role}</span>
@@ -85,6 +126,11 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
               Visual Identity {locked ? "LOCKED" : "NOT LOCKED"}
               {locked && character.referenceEpisode ? ` (ep. ${character.referenceEpisode})` : ""}
             </div>
+            {pendingCandidate && (
+              <div className="text-[10px] font-semibold text-amber-400 mt-1">
+                CHARACTER MASTER · candidate only · not canonical
+              </div>
+            )}
             {onReplaceReference && (
               <button
                 type="button"

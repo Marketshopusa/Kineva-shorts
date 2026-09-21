@@ -56,3 +56,14 @@ test("checkFalBalance does not throw when remaining is readable", async () => {
   const bal = await checkFalBalance({ FAL_KEY: "x" }, fetchFn)
   assert.equal(bal.remainingUsd, 1)
 })
+
+test("checkFalBalance reads credits.current_balance from billing expand", async () => {
+  const fetchFn = async (url) => {
+    if (String(url).includes("account/billing")) {
+      return jsonResponse(200, { credits: { current_balance: 8.25 } })
+    }
+    return jsonResponse(404, {})
+  }
+  const bal = await checkFalBalance({ FAL_KEY: "x" }, fetchFn)
+  assert.equal(bal.remainingUsd, 8.25)
+})

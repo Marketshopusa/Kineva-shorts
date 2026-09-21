@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { visualIdentityStatus } from "@/lib/character-identity"
 import prisma from "@/lib/prisma"
 import { requireAdmin } from "@/lib/adminAuth"
+import { masterCandidateFields } from "@/lib/elena-varela-master-server.js"
 
 export async function GET(request) {
   const session = await requireAdmin()
@@ -20,10 +21,11 @@ export async function GET(request) {
       orderBy: { createdAt: "asc" },
     })
 
-    return Response.json(characters.map((c) => ({
+    return Response.json(await Promise.all(characters.map(async (c) => ({
       ...c,
       visualIdentity: visualIdentityStatus(c),
-    })))
+      ...(await masterCandidateFields(c)),
+    }))))
   } catch (error) {
     console.error("Characters GET error:", error)
     return Response.json({ error: "Failed to load characters" }, { status: 500 })
