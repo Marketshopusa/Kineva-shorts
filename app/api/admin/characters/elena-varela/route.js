@@ -8,11 +8,12 @@ import { generateStillForRail } from "@/lib/still-for-rail"
 import { getAIConfig } from "@/lib/getAIConfig"
 import { jsonRailError } from "@/lib/http-rail-error"
 import { assertAdapterMatchesRail } from "@/lib/content-rails"
-import { checkFalBalance, requireFalSpendReady } from "@/lib/providers/images/fal.js"
+import { probeFalAccount, requireFalSpendReady } from "@/lib/providers/images/fal.js"
 import {
   CHARACTER_MASTER_ASPECT,
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
+  ELENA_SERIES_ID,
   buildCharacterMasterPrompt,
   elenaMasterGenerateAllowed,
   isCanonicalStoragePath,
@@ -20,15 +21,36 @@ import {
 import { persistCharacterCandidate } from "@/lib/character-reference-storage.js"
 import { loadElenaMasterPayload, resolveElenaVarelaFromDb } from "@/lib/elena-varela-master-server.js"
 
+const CONFIRMED_ELENA_ID = 2
+
 function falBalanceReport(balance) {
-  if (!balance?.ok) return { status: "UNKNOWN", remainingUsd: null, detail: balance?.detail || null }
+  if (!balance?.ok) {
+    return {
+      status: "UNKNOWN",
+      remainingUsd: null,
+      detail: balance?.detail || null,
+      keyMatch: balance?.keyMatch || "UNKNOWN",
+      generateLocked: !!balance?.generateLocked,
+      username: balance?.username || null,
+    }
+  }
   if (balance.remainingUsd != null && balance.remainingUsd <= 0) {
-    return { status: "TOP_UP_REQUIRED", remainingUsd: balance.remainingUsd, detail: balance.detail || null }
+    return {
+      status: "TOP_UP_REQUIRED",
+      remainingUsd: balance.remainingUsd,
+      detail: balance.detail || null,
+      keyMatch: "NO",
+      generateLocked: true,
+      username: balance.username || null,
+    }
   }
   return {
-    status: "AVAILABLE",
+    status: balance.generateLocked ? "TOP_UP_REQUIRED" : "AVAILABLE",
     remainingUsd: balance.remainingUsd ?? null,
-    detail: balance.detail || null,
+    detail: balance.probeDetail || balance.detail || null,
+    keyMatch: balance.keyMatch || "UNKNOWN",
+    generateLocked: !!balance.generateLocked,
+    username: balance.username || null,
   }
 }
 
@@ -40,23 +62,34 @@ function masterConstants() {
   }
 }
 
+async function resolveConfirmedElena() {
+  const character = await resolveElenaVarelaFromDb()
+  if (!character) return null
+  if (Number(character.id) !== CONFIRMED_ELENA_ID || Number(character.seriesId) !== ELENA_SERIES_ID) {
+    return null
+  }
+  return character
+}
+
 export async function GET() {
   const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-  const character = await resolveElenaVarelaFromDb()
+  const character = await resolveConfirmedElena()
   if (!character) {
-    return Response.json({ error: "Elena Varela not found in Series/2" }, { status: 404 })
+    return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
   }
 
-  let fal = { status: "UNKNOWN", remainingUsd: null }
+  let fal = { status: "UNKNOWN", remainingUsd: null, keyMatch: "UNKNOWN", generateLocked: false }
   try {
-    fal = falBalanceReport(await checkFalBalance())
+    fal = falBalanceReport(await probeFalAccount())
   } catch (err) {
     const msg = String(err?.message || err)
     fal = {
       status: /TOP_UP/i.test(msg) ? "TOP_UP_REQUIRED" : "UNKNOWN",
       remainingUsd: null,
+      keyMatch: /TOP_UP/i.test(msg) ? "NO" : "UNKNOWN",
+      generateLocked: /TOP_UP/i.test(msg),
     }
   }
 
@@ -65,6 +98,7 @@ export async function GET() {
     elenaCharacterId: character.id,
     ...payload,
     fal,
+    falKeyMatch: fal.keyMatch,
     generateCalls: 0,
     elenaMaster: payload.candidates.length ? "CANDIDATE" : "PENDING_GENERATE",
     visualIdentity: payload.character.visualIdentity,
@@ -76,10 +110,11 @@ export async function POST() {
   const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
+  let generateCalls = 0
   try {
-    const character = await resolveElenaVarelaFromDb()
+    const character = await resolveConfirmedElena()
     if (!character) {
-      return Response.json({ error: "Elena Varela not found in Series/2" }, { status: 404 })
+      return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
     }
 
     const existing = await loadElenaMasterPayload(character)
@@ -95,14 +130,28 @@ export async function POST() {
       }, { status: 409 })
     }
 
-    const balanceBefore = await checkFalBalance()
-    requireFalSpendReady(balanceBefore)
+    const probe = await probeFalAccount()
+    const fal = falBalanceReport(probe)
+    if (probe.generateLocked || (probe.remainingUsd != null && probe.remainingUsd <= 0)) {
+      return Response.json({
+        error: "BLOCKED_BALANCE (image): FAL_TOP_UP_REQUIRED",
+        elenaCharacterId: character.id,
+        fal,
+        falKeyMatch: "NO",
+        generateCalls: 0,
+        elenaMaster: "FAIL",
+        visualIdentity: existing.character.visualIdentity,
+        ...masterConstants(),
+      }, { status: 402 })
+    }
+    requireFalSpendReady(probe)
 
     const series = await prisma.series.findUnique({ where: { id: character.seriesId } })
     const { rail } = await loadSeriesRail(character.seriesId)
     assertAdapterMatchesRail(rail, "image", "fal")
     const config = await getAIConfig()
     const prompt = buildCharacterMasterPrompt(character, series)
+    generateCalls = 1
     const { dataUrl, provider } = await generateStillForRail(
       rail,
       {
@@ -125,15 +174,15 @@ export async function POST() {
       throw new Error("refused to persist Elena master as canonical.png")
     }
 
-    let balanceAfter = null
+    let probeAfter = null
     try {
-      balanceAfter = await checkFalBalance()
+      probeAfter = await probeFalAccount()
     } catch {
-      balanceAfter = null
+      probeAfter = null
     }
     const costUsd =
-      balanceBefore.remainingUsd != null && balanceAfter?.remainingUsd != null
-        ? Number((balanceBefore.remainingUsd - balanceAfter.remainingUsd).toFixed(6))
+      probe.remainingUsd != null && probeAfter?.remainingUsd != null
+        ? Number((probe.remainingUsd - probeAfter.remainingUsd).toFixed(6))
         : null
 
     const fresh = await prisma.character.findUnique({ where: { id: character.id } })
@@ -144,13 +193,25 @@ export async function POST() {
       generateCalls: 1,
       elenaMaster: "PASS",
       provider,
-      fal: falBalanceReport(balanceAfter || balanceBefore),
+      fal: falBalanceReport(probeAfter || probe),
+      falKeyMatch: "YES",
       costUsd,
       storagePath,
       visualIdentity: payload.character.visualIdentity,
       ...masterConstants(),
     })
   } catch (err) {
-    return jsonRailError(err) || Response.json({ error: err.message || "Elena master failed" }, { status: 500 })
+    const rail = jsonRailError(err)
+    if (rail) {
+      const msg = String(err.message || err)
+      return Response.json({
+        error: msg,
+        generateCalls,
+        elenaMaster: "FAIL",
+        falKeyMatch: /TOP_UP/i.test(msg) ? "NO" : "UNKNOWN",
+        visualIdentity: "NOT LOCKED",
+      }, { status: rail.status })
+    }
+    return Response.json({ error: err.message || "Elena master failed", generateCalls, elenaMaster: "FAIL" }, { status: 500 })
   }
 }

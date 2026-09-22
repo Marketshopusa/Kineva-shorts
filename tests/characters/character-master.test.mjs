@@ -51,7 +51,7 @@ test("resolves Elena Varela by seriesId + name + role, not numeric id", () => {
   assert.equal(found?.name, "Elena Varela")
 })
 
-test("character master prompt is a portrait, not a scene still", () => {
+test("character master prompt is a portrait and persisted wardrobe beats a black coat", () => {
   const prompt = buildCharacterMasterPrompt(REAL_ELENA, {
     title: "LA ÚLTIMA LLAMADA",
     tone: "cinematic thriller",
@@ -59,10 +59,12 @@ test("character master prompt is a portrait, not a scene still", () => {
   })
   assert.match(prompt, /ELENA VARELA — CHARACTER MASTER/)
   assert.match(prompt, /cream knit sweater/)
+  assert.match(prompt, /WARDROBE LOCK: cream knit sweater/)
   assert.match(prompt, /No other people/)
   assert.doesNotMatch(prompt, /Mateo/)
   assert.doesNotMatch(prompt, /Iván|Ivan/)
-  assert.match(prompt, /no phone, no apartment/)
+  assert.match(prompt, /Do not show a phone/)
+  assert.doesNotMatch(prompt, /preferably a black coat/)
   assert.equal(CHARACTER_MASTER_ASPECT, "9:16")
   assert.deepEqual(CHARACTER_MASTER_SIZE, { width: 1080, height: 1920 })
   assert.equal(CHARACTER_MASTER_MODEL, "fal-ai/flux/dev")
