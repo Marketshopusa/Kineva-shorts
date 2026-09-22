@@ -4,9 +4,12 @@ import {
   CHARACTER_MASTER_ASPECT,
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
+  ELENA_REGEN_APPEARANCE,
+  applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
   characterCandidatePath,
   characterCandidatePrefix,
+  characterMasterImageSrc,
   elenaMasterGenerateAllowed,
   isCanonicalStoragePath,
   isElenaVarelaCharacter,
@@ -78,10 +81,41 @@ test("candidate path is not canonical.png", () => {
   assert.equal(characterCandidatePrefix(2, 42), "characters/2/42/candidates")
 })
 
-test("a second generate is blocked once a candidate exists", () => {
+test("a second generate is blocked once a candidate exists unless regenerate is authorized", () => {
+  const one = [{ path: "characters/2/2/candidates/recov.png" }]
+  const two = [
+    { path: "characters/2/2/candidates/recov.png" },
+    { path: "characters/2/2/candidates/regen.png" },
+  ]
   assert.equal(elenaMasterGenerateAllowed([]), true)
-  assert.equal(elenaMasterGenerateAllowed([{ path: "characters/2/42/candidates/x.png" }]), false)
-  assert.equal(elenaMasterGenerateAllowed([{ path: "characters/2/2/candidates/recov.png" }]), false)
+  assert.equal(elenaMasterGenerateAllowed(one), false)
+  assert.equal(elenaMasterGenerateAllowed(one, { regenerate: true }), true)
+  assert.equal(elenaMasterGenerateAllowed(two, { regenerate: true }), false)
+  assert.equal(elenaMasterGenerateAllowed(two), false)
+})
+
+test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dark studio", () => {
+  const character = {
+    ...REAL_ELENA,
+    appearance: applyElenaRegenAppearance(REAL_ELENA.appearance),
+  }
+  const prompt = buildCharacterMasterPrompt(character, {
+    title: "LA ÚLTIMA LLAMADA",
+    tone: "íntimo, tenso, humano",
+    premise: "Elena recibe una llamada.",
+  })
+  assert.match(prompt, /Venezuelan Latina/)
+  assert.match(prompt, /light blue or grey-blue eyes/)
+  assert.match(prompt, /fair luminous white-Latina skin/)
+  assert.match(prompt, /No crop top/)
+  assert.match(prompt, /Not a black studio backdrop/)
+  assert.doesNotMatch(prompt, /Mexican woman/)
+  assert.doesNotMatch(prompt, /warm medium-brown skin/)
+  assert.doesNotMatch(prompt, /blue-night/)
+  assert.doesNotMatch(prompt, /Mateo/)
+  assert.equal(character.appearance.basePrompt, ELENA_REGEN_APPEARANCE.basePrompt)
+  assert.equal(isCanonicalStoragePath("characters/2/2/candidates/regen.png"), false)
+  assert.match(characterMasterImageSrc(2, "regen.png"), /master\/image\?v=regen\.png/)
 })
 
 test("persistCharacterCandidate writes candidates/ and never canonical.png", async () => {

@@ -27,7 +27,7 @@ export async function GET(_request, { params }) {
     return new Response(buf, {
       headers: {
         "Content-Type": sniffImageContentType(buf),
-        "Cache-Control": "private, max-age=60",
+        "Cache-Control": "private, no-store",
       },
     })
   } catch {

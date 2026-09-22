@@ -163,3 +163,32 @@ test("Fal jpeg still is visible as image/jpeg, not as canonical.png", () => {
   assert.equal(isCanonicalStoragePath("characters/2/2/candidates/recovered-01a0cb32-ae19-7541-9457-9a9d3aabce5c.png"), false)
   assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
 })
+
+test("ready images bucket persists a second candidate without replacing canonical or locking", async () => {
+  const uploads = []
+  const first = await persistCharacterCandidate({
+    seriesId: 2,
+    characterId: 2,
+    candidateId: "recov",
+    imageUrl: "data:image/png;base64,aGVsbG8=",
+    uploadFn: async (bucket, storagePath) => {
+      uploads.push({ bucket, storagePath })
+    },
+  })
+  const second = await persistCharacterCandidate({
+    seriesId: 2,
+    characterId: 2,
+    candidateId: "regen",
+    imageUrl: "data:image/png;base64,d29ybGQ=",
+    uploadFn: async (bucket, storagePath) => {
+      uploads.push({ bucket, storagePath })
+    },
+  })
+  assert.equal(first, "characters/2/2/candidates/recov.png")
+  assert.equal(second, "characters/2/2/candidates/regen.png")
+  assert.equal(uploads.length, 2)
+  assert.equal(uploads.every((item) => item.bucket === "images"), true)
+  assert.equal(uploads.some((item) => /canonical\.png$/.test(item.storagePath)), false)
+  assert.equal(elenaMasterGenerateAllowed([{ path: first }, { path: second }], { regenerate: true }), false)
+  assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
+})

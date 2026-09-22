@@ -20,6 +20,7 @@ import {
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
   ELENA_SERIES_ID,
+  applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
   elenaMasterGenerateAllowed,
   isCanonicalStoragePath,
@@ -257,9 +258,12 @@ export async function POST(request) {
   let generateCalls = 0
   try {
     const existing = await loadElenaMasterPayload(character)
-    if (!elenaMasterGenerateAllowed(existing.candidates)) {
+    const regenerate = body.regenerate === true
+    if (!elenaMasterGenerateAllowed(existing.candidates, { regenerate })) {
       return Response.json({
-        error: "Elena master candidate already exists; waiting for human approval",
+        error: regenerate
+          ? "Elena master regenerate already used; waiting for human approval"
+          : "Elena master candidate already exists; waiting for human approval",
         elenaCharacterId: character.id,
         ...existing,
         generateCalls: 0,
@@ -293,7 +297,10 @@ export async function POST(request) {
     const { rail } = await loadSeriesRail(character.seriesId)
     assertAdapterMatchesRail(rail, "image", "fal")
     const config = await getAIConfig()
-    const prompt = buildCharacterMasterPrompt(character, series)
+    const promptCharacter = regenerate
+      ? { ...character, appearance: applyElenaRegenAppearance(character.appearance) }
+      : character
+    const prompt = buildCharacterMasterPrompt(promptCharacter, series)
     generateCalls = 1
     const { dataUrl, provider } = await generateStillForRail(
       rail,
@@ -317,7 +324,13 @@ export async function POST(request) {
       throw new Error("refused to persist Elena master as canonical.png")
     }
 
-    const fresh = await prisma.character.findUnique({ where: { id: character.id } })
+    let fresh = await prisma.character.findUnique({ where: { id: character.id } })
+    if (regenerate) {
+      fresh = await prisma.character.update({
+        where: { id: character.id },
+        data: { appearance: applyElenaRegenAppearance(character.appearance) },
+      })
+    }
     const payload = await loadElenaMasterPayload(fresh)
     return Response.json({
       elenaCharacterId: character.id,
@@ -331,6 +344,7 @@ export async function POST(request) {
       storagePath,
       visualIdentity: payload.character.visualIdentity,
       pendingApproval: payload.pendingApproval,
+      previousCandidateKept: regenerate ? existing.candidates.length > 0 : false,
       ...masterConstants(),
     })
   } catch (err) {
