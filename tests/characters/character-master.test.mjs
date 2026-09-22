@@ -81,6 +81,7 @@ test("candidate path is not canonical.png", () => {
 test("a second generate is blocked once a candidate exists", () => {
   assert.equal(elenaMasterGenerateAllowed([]), true)
   assert.equal(elenaMasterGenerateAllowed([{ path: "characters/2/42/candidates/x.png" }]), false)
+  assert.equal(elenaMasterGenerateAllowed([{ path: "characters/2/2/candidates/recov.png" }]), false)
 })
 
 test("persistCharacterCandidate writes candidates/ and never canonical.png", async () => {

@@ -9,6 +9,12 @@ import { getAIConfig } from "@/lib/getAIConfig"
 import { jsonRailError } from "@/lib/http-rail-error"
 import { assertAdapterMatchesRail } from "@/lib/content-rails"
 import { probeFalAccount, requireFalSpendReady } from "@/lib/providers/images/fal.js"
+import { findRecentElenaMasterStill } from "@/lib/fal-history.js"
+import {
+  assertImagesBucketReady,
+  ensurePrivateImagesBucket,
+  inspectImagesStorage,
+} from "@/lib/storage-preflight.js"
 import {
   CHARACTER_MASTER_ASPECT,
   CHARACTER_MASTER_MODEL,
@@ -71,6 +77,21 @@ async function resolveConfirmedElena() {
   return character
 }
 
+async function storageReport() {
+  try {
+    return await inspectImagesStorage()
+  } catch (err) {
+    return {
+      buckets: [],
+      imagesBucket: "images",
+      action: "UNKNOWN",
+      private: null,
+      ready: false,
+      error: String(err?.message || err),
+    }
+  }
+}
+
 export async function GET() {
   const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
@@ -93,6 +114,19 @@ export async function GET() {
     }
   }
 
+  const storage = await storageReport()
+  let recovery = { recoverable: false, reason: "not inspected", requestId: null }
+  try {
+    const found = await findRecentElenaMasterStill()
+    recovery = {
+      recoverable: !!found.recoverable,
+      reason: found.reason || null,
+      requestId: found.requestId || null,
+    }
+  } catch (err) {
+    recovery = { recoverable: false, reason: String(err?.message || err), requestId: null }
+  }
+
   const payload = await loadElenaMasterPayload(character)
   return Response.json({
     elenaCharacterId: character.id,
@@ -102,21 +136,106 @@ export async function GET() {
     generateCalls: 0,
     elenaMaster: payload.candidates.length ? "CANDIDATE" : "PENDING_GENERATE",
     visualIdentity: payload.character.visualIdentity,
+    pendingApproval: payload.pendingApproval,
+    storage,
+    previousFalImage: recovery,
     ...masterConstants(),
   })
 }
 
-export async function POST() {
+async function recoverElenaMaster(character) {
+  const existing = await loadElenaMasterPayload(character)
+  if (!elenaMasterGenerateAllowed(existing.candidates)) {
+    return Response.json({
+      error: "Elena master candidate already exists; waiting for human approval",
+      elenaCharacterId: character.id,
+      ...existing,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      elenaMaster: "CANDIDATE",
+      visualIdentity: existing.character.visualIdentity,
+      pendingApproval: true,
+      ...masterConstants(),
+    }, { status: 409 })
+  }
+
+  const storage = await ensurePrivateImagesBucket()
+  const found = await findRecentElenaMasterStill()
+  if (!found.recoverable || !found.imageUrl) {
+    return Response.json({
+      elenaCharacterId: character.id,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      previousFalImageRecoverable: false,
+      reason: found.reason || "original Fal still not found",
+      storage,
+      elenaMaster: "FAIL",
+      visualIdentity: existing.character.visualIdentity,
+      pendingApproval: false,
+      ...masterConstants(),
+    })
+  }
+
+  const candidateId = `recovered-${String(found.requestId || randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || randomUUID()}`
+  const storagePath = await persistCharacterCandidate({
+    seriesId: character.seriesId,
+    characterId: character.id,
+    imageUrl: found.imageUrl,
+    candidateId,
+  })
+  if (isCanonicalStoragePath(storagePath)) {
+    throw new Error("refused to persist Elena master as canonical.png")
+  }
+
+  const fresh = await prisma.character.findUnique({ where: { id: character.id } })
+  const payload = await loadElenaMasterPayload(fresh)
+  return Response.json({
+    elenaCharacterId: character.id,
+    ...payload,
+    generateCalls: 0,
+    falGenerateCallsThisStep: 0,
+    previousFalImageRecoverable: true,
+    elenaMaster: payload.candidates.length ? "PASS" : "FAIL",
+    storage,
+    storagePath,
+    visualIdentity: payload.character.visualIdentity,
+    pendingApproval: payload.pendingApproval,
+    requestId: found.requestId,
+    ...masterConstants(),
+  })
+}
+
+export async function POST(request) {
   const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
+  let body = {}
+  try {
+    body = await request.json()
+  } catch {
+    body = {}
+  }
+
+  const character = await resolveConfirmedElena()
+  if (!character) {
+    return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
+  }
+
+  if (body.generate !== true) {
+    try {
+      return await recoverElenaMaster(character)
+    } catch (err) {
+      return jsonRailError(err) || Response.json({
+        error: err.message || "Elena recover failed",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        elenaMaster: "FAIL",
+      }, { status: 500 })
+    }
+  }
+
   let generateCalls = 0
   try {
-    const character = await resolveConfirmedElena()
-    if (!character) {
-      return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
-    }
-
     const existing = await loadElenaMasterPayload(character)
     if (!elenaMasterGenerateAllowed(existing.candidates)) {
       return Response.json({
@@ -124,11 +243,14 @@ export async function POST() {
         elenaCharacterId: character.id,
         ...existing,
         generateCalls: 0,
+        falGenerateCallsThisStep: 0,
         elenaMaster: "CANDIDATE",
         visualIdentity: existing.character.visualIdentity,
         ...masterConstants(),
       }, { status: 409 })
     }
+
+    await assertImagesBucketReady()
 
     const probe = await probeFalAccount()
     const fal = falBalanceReport(probe)
@@ -139,6 +261,7 @@ export async function POST() {
         fal,
         falKeyMatch: "NO",
         generateCalls: 0,
+        falGenerateCallsThisStep: 0,
         elenaMaster: "FAIL",
         visualIdentity: existing.character.visualIdentity,
         ...masterConstants(),
@@ -174,30 +297,20 @@ export async function POST() {
       throw new Error("refused to persist Elena master as canonical.png")
     }
 
-    let probeAfter = null
-    try {
-      probeAfter = await probeFalAccount()
-    } catch {
-      probeAfter = null
-    }
-    const costUsd =
-      probe.remainingUsd != null && probeAfter?.remainingUsd != null
-        ? Number((probe.remainingUsd - probeAfter.remainingUsd).toFixed(6))
-        : null
-
     const fresh = await prisma.character.findUnique({ where: { id: character.id } })
     const payload = await loadElenaMasterPayload(fresh)
     return Response.json({
       elenaCharacterId: character.id,
       ...payload,
       generateCalls: 1,
+      falGenerateCallsThisStep: 1,
       elenaMaster: "PASS",
       provider,
-      fal: falBalanceReport(probeAfter || probe),
+      fal: falBalanceReport(probe),
       falKeyMatch: "YES",
-      costUsd,
       storagePath,
       visualIdentity: payload.character.visualIdentity,
+      pendingApproval: payload.pendingApproval,
       ...masterConstants(),
     })
   } catch (err) {
@@ -207,11 +320,17 @@ export async function POST() {
       return Response.json({
         error: msg,
         generateCalls,
+        falGenerateCallsThisStep: generateCalls,
         elenaMaster: "FAIL",
         falKeyMatch: /TOP_UP/i.test(msg) ? "NO" : "UNKNOWN",
         visualIdentity: "NOT LOCKED",
       }, { status: rail.status })
     }
-    return Response.json({ error: err.message || "Elena master failed", generateCalls, elenaMaster: "FAIL" }, { status: 500 })
+    return Response.json({
+      error: err.message || "Elena master failed",
+      generateCalls,
+      falGenerateCallsThisStep: generateCalls,
+      elenaMaster: "FAIL",
+    }, { status: 500 })
   }
 }
