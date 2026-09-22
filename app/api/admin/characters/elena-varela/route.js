@@ -20,12 +20,14 @@ import {
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
   ELENA_SERIES_ID,
+  APPROVED_ELENA_CANDIDATE_PATH,
   applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
   elenaMasterGenerateAllowed,
+  isApprovedElenaCandidatePath,
   isCanonicalStoragePath,
 } from "@/lib/character-master.js"
-import { persistCharacterCandidate } from "@/lib/character-reference-storage.js"
+import { approveCanonicalFromCandidate, persistCharacterCandidate } from "@/lib/character-reference-storage.js"
 import { loadElenaMasterPayload, resolveElenaVarelaFromDb } from "@/lib/elena-varela-master-server.js"
 
 const CONFIRMED_ELENA_ID = 2
@@ -226,6 +228,59 @@ async function recoverElenaMaster(character) {
   })
 }
 
+async function approveElenaCanonical(character, candidatePath) {
+  const existing = await loadElenaMasterPayload(character)
+  const requested = String(candidatePath || APPROVED_ELENA_CANDIDATE_PATH)
+  if (!isApprovedElenaCandidatePath(requested)) {
+    return Response.json({
+      error: "Only the approved Elena candidate can be locked",
+      elenaCharacterId: character.id,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      elenaMaster: "FAIL",
+      visualIdentity: existing.character.visualIdentity,
+      ...masterConstants(),
+    }, { status: 400 })
+  }
+  if (!existing.candidates.some((item) => item.path === requested)) {
+    return Response.json({
+      error: "Approved Elena candidate is not in storage",
+      elenaCharacterId: character.id,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      elenaMaster: "FAIL",
+      visualIdentity: existing.character.visualIdentity,
+      ...masterConstants(),
+    }, { status: 404 })
+  }
+
+  const { canonicalPath } = await approveCanonicalFromCandidate({
+    seriesId: character.seriesId,
+    characterId: character.id,
+    candidatePath: requested,
+  })
+
+  const fresh = await prisma.character.update({
+    where: { id: character.id },
+    data: { referenceImageUrl: canonicalPath, referenceEpisode: null },
+  })
+  const payload = await loadElenaMasterPayload(fresh)
+  const preserved = payload.candidates.some((item) => item.path === requested)
+  return Response.json({
+    elenaCharacterId: character.id,
+    ...payload,
+    generateCalls: 0,
+    falGenerateCallsThisStep: 0,
+    elenaMaster: payload.character.visualIdentity === "LOCKED" && preserved ? "PASS" : "FAIL",
+    storagePath: canonicalPath,
+    canonicalPath,
+    candidatePreserved: preserved,
+    visualIdentity: payload.character.visualIdentity,
+    pendingApproval: payload.pendingApproval,
+    ...masterConstants(),
+  })
+}
+
 export async function POST(request) {
   const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
@@ -240,6 +295,27 @@ export async function POST(request) {
   const character = await resolveConfirmedElena()
   if (!character) {
     return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
+  }
+
+  if (body.approve === true) {
+    if (body.generate === true) {
+      return Response.json({
+        error: "Approve does not generate",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        elenaMaster: "FAIL",
+      }, { status: 400 })
+    }
+    try {
+      return await approveElenaCanonical(character, body.candidatePath)
+    } catch (err) {
+      return jsonRailError(err) || Response.json({
+        error: err.message || "Elena approve failed",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        elenaMaster: "FAIL",
+      }, { status: 500 })
+    }
   }
 
   if (body.generate !== true) {

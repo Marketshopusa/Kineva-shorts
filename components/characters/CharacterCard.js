@@ -1,6 +1,6 @@
 "use client"
 
-import { Lock, X } from "lucide-react"
+import { Lock } from "lucide-react"
 import { characterReferenceDisplaySrc, visualIdentityStatus } from "@/lib/character-identity"
 import { characterMasterImageSrc } from "@/lib/character-master.js"
 
@@ -11,13 +11,36 @@ const ROLE_COLORS = {
   minor: "text-text-muted",
 }
 
-async function clearReference(charId, onClear) {
-  try {
-    const res = await fetch(`/api/admin/characters/${charId}/reference`, { method: "DELETE" })
-    if (res.ok) onClear?.()
-  } catch {
-    // silent fail
+function CanonicalPortrait({ character, compact }) {
+  const src = characterReferenceDisplaySrc(character)
+  if (!src) return null
+  if (compact) {
+    return (
+      <div className="relative shrink-0">
+        <div className="w-10 h-[71px] rounded-lg overflow-hidden border border-green-500/40">
+          <img
+            src={src}
+            alt={`${character.name} canonical reference`}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      </div>
+    )
   }
+  return (
+    <div className="relative shrink-0">
+      <div className="w-28 h-[199px] rounded-xl overflow-hidden border border-green-500/40 bg-surface-2">
+        <img
+          src={src}
+          alt={`${character.name} canonical character reference`}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-green-500/90 text-[10px] font-semibold text-white">
+        LOCKED
+      </div>
+    </div>
+  )
 }
 
 function CandidatePortrait({ character, compact }) {
@@ -54,13 +77,13 @@ function CandidatePortrait({ character, compact }) {
 export default function CharacterCard({ character, compact = false, onEdit, onDelete, onReferenceCleared, onReplaceReference }) {
   const roleColor = ROLE_COLORS[character.role] || "text-text-muted"
   const locked = visualIdentityStatus(character) === "LOCKED"
-  const thumb = characterReferenceDisplaySrc(character)
   const pendingCandidate = !locked && !!character.pendingMasterApproval
 
   if (compact) {
     return (
       <div className="p-3 bg-surface border border-border rounded-xl">
         <div className="flex items-start gap-3">
+          {locked && <CanonicalPortrait character={character} compact />}
           {pendingCandidate && <CandidatePortrait character={character} compact />}
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
@@ -94,29 +117,7 @@ export default function CharacterCard({ character, compact = false, onEdit, onDe
     <div className="p-5 bg-surface border border-border rounded-xl">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3">
-          {locked && thumb && (
-            <div className="relative shrink-0 group">
-              <div className="w-12 h-[85px] rounded-lg overflow-hidden border border-green-500/30">
-                <img
-                  src={thumb}
-                  alt={`${character.name} reference`}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="absolute -top-1 -left-1 bg-green-500 rounded-full p-0.5">
-                <Lock className="w-2.5 h-2.5 text-white" />
-              </div>
-              {onReferenceCleared && (
-                <button
-                  onClick={() => clearReference(character.id, onReferenceCleared)}
-                  title="Clear reference image"
-                  className="absolute -top-1 -right-1 bg-accent rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X className="w-2.5 h-2.5 text-white" />
-                </button>
-              )}
-            </div>
-          )}
+          {locked && <CanonicalPortrait character={character} compact={false} />}
           {pendingCandidate && <CandidatePortrait character={character} compact={false} />}
           <div>
             <h3 className="font-semibold text-lg">{character.name}</h3>

@@ -11,11 +11,14 @@ import {
   characterCandidatePrefix,
   characterMasterImageSrc,
   elenaMasterGenerateAllowed,
+  isApprovedElenaCandidatePath,
   isCanonicalStoragePath,
   isElenaVarelaCharacter,
   matchElenaVarela,
+  APPROVED_ELENA_CANDIDATE_PATH,
 } from "../../lib/character-master.js"
-import { persistCharacterCandidate } from "../../lib/character-reference-storage.js"
+import { persistCharacterCandidate, approveCanonicalFromCandidate } from "../../lib/character-reference-storage.js"
+import { visualIdentityStatus } from "../../lib/character-identity.js"
 
 const FIXTURE_ELENA_ID_7 = {
   id: 7,
@@ -133,4 +136,33 @@ test("persistCharacterCandidate writes candidates/ and never canonical.png", asy
   assert.equal(uploads[0].storagePath, path)
   assert.equal(isCanonicalStoragePath(path), false)
   assert.equal(uploads.some((item) => /canonical\.png$/.test(item.storagePath)), false)
+})
+
+test("approve copies the chosen candidate to canonical without deleting it or calling Fal", async () => {
+  const downloads = []
+  const uploads = []
+  let generateCalls = 0
+  const approved = APPROVED_ELENA_CANDIDATE_PATH
+  assert.equal(isApprovedElenaCandidatePath(approved), true)
+  assert.equal(isApprovedElenaCandidatePath("characters/2/2/candidates/recovered-01a0cb32-ae19-7541-9457-9a9d3aabce5c.png"), false)
+  const result = await approveCanonicalFromCandidate({
+    seriesId: 2,
+    characterId: 2,
+    candidatePath: approved,
+    downloadStorage: async (bucket, storagePath) => {
+      downloads.push({ bucket, storagePath })
+      return Buffer.from("same-bytes")
+    },
+    uploadFn: async (bucket, storagePath, buffer) => {
+      uploads.push({ bucket, storagePath, bytes: buffer.length })
+    },
+  })
+  assert.equal(result.canonicalPath, "characters/2/2/canonical.png")
+  assert.equal(result.candidatePath, approved)
+  assert.equal(downloads[0].storagePath, approved)
+  assert.equal(uploads[0].storagePath, "characters/2/2/canonical.png")
+  assert.equal(uploads.some((item) => item.storagePath === approved), false)
+  assert.equal(generateCalls, 0)
+  assert.equal(visualIdentityStatus({ referenceImageUrl: result.canonicalPath }), "LOCKED")
+  assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
 })
