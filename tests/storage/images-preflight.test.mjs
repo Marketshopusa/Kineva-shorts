@@ -5,11 +5,17 @@ import {
   chooseImagesBucket,
   ensurePrivateImagesBucket,
   inspectImagesStorage,
+  runProviderAfterImagesBucketReady,
 } from "../../lib/storage-preflight.js"
 import { persistCharacterCandidate } from "../../lib/character-reference-storage.js"
-import { isCanonicalStoragePath, elenaMasterGenerateAllowed } from "../../lib/character-master.js"
+import {
+  characterMasterImageSrc,
+  isCanonicalStoragePath,
+  elenaMasterGenerateAllowed,
+} from "../../lib/character-master.js"
 import { visualIdentityStatus } from "../../lib/character-identity.js"
 import { findRecentElenaMasterStill, selectRecoverableElenaStill } from "../../lib/fal-history.js"
+import { sniffImageContentType } from "../../lib/image-bytes.js"
 
 test("missing images bucket is not ready", () => {
   const choice = chooseImagesBucket([{ name: "dubs", public: false }, { name: "renders", public: false }])
@@ -26,9 +32,13 @@ test("existing images bucket is reused and stays private", () => {
 test("bucket missing throws before a generate callback", async () => {
   let generateCalls = 0
   await assert.rejects(
-    () => assertImagesBucketReady({
-      listFn: async () => [{ name: "dubs", public: false }],
-    }),
+    () => runProviderAfterImagesBucketReady(
+      async () => {
+        generateCalls += 1
+        return "spent"
+      },
+      { listFn: async () => [{ name: "dubs", public: false }] },
+    ),
     /IMAGES_BUCKET not ready/,
   )
   assert.equal(generateCalls, 0)
@@ -120,4 +130,36 @@ test("inspect reports storage buckets without secrets", async () => {
   })
   assert.deepEqual(inspect.buckets.map((bucket) => bucket.name).sort(), ["dubs", "images"])
   assert.equal(inspect.ready, true)
+})
+
+test("ready images bucket persists candidate as visible and not canonical", async () => {
+  const uploads = []
+  await runProviderAfterImagesBucketReady(
+    async () => "ok",
+    { listFn: async () => [{ name: "images", public: false }] },
+  )
+  const path = await persistCharacterCandidate({
+    seriesId: 2,
+    characterId: 2,
+    candidateId: "visible",
+    imageUrl: "data:image/png;base64,aGVsbG8=",
+    uploadFn: async (bucket, storagePath) => {
+      uploads.push({ bucket, storagePath })
+    },
+  })
+  assert.equal(uploads[0].bucket, "images")
+  assert.equal(path, "characters/2/2/candidates/visible.png")
+  assert.equal(isCanonicalStoragePath(path), false)
+  assert.equal(characterMasterImageSrc(2), "/api/admin/characters/2/master/image")
+  assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
+  assert.equal(elenaMasterGenerateAllowed([{ path }]), false)
+})
+
+test("Fal jpeg still is visible as image/jpeg, not as canonical.png", () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  assert.equal(sniffImageContentType(jpeg), "image/jpeg")
+  assert.equal(sniffImageContentType(png), "image/png")
+  assert.equal(isCanonicalStoragePath("characters/2/2/candidates/recovered-01a0cb32-ae19-7541-9457-9a9d3aabce5c.png"), false)
+  assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
 })

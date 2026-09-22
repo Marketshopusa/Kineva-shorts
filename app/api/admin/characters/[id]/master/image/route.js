@@ -3,6 +3,7 @@ import { requireAdminOrTaskToken } from "@/lib/adminAuth"
 import prisma from "@/lib/prisma"
 import { listCharacterCandidates } from "@/lib/character-reference-storage.js"
 import { downloadAsBuffer, IMAGES_BUCKET } from "@/lib/supabase-storage"
+import { sniffImageContentType } from "@/lib/image-bytes.js"
 
 export async function GET(_request, { params }) {
   const session = await requireAdminOrTaskToken()
@@ -25,7 +26,7 @@ export async function GET(_request, { params }) {
     const buf = await downloadAsBuffer(IMAGES_BUCKET, candidates[0].path)
     return new Response(buf, {
       headers: {
-        "Content-Type": "image/png",
+        "Content-Type": sniffImageContentType(buf),
         "Cache-Control": "private, max-age=60",
       },
     })

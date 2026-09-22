@@ -177,12 +177,32 @@ async function recoverElenaMaster(character) {
   }
 
   const candidateId = `recovered-${String(found.requestId || randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || randomUUID()}`
-  const storagePath = await persistCharacterCandidate({
-    seriesId: character.seriesId,
-    characterId: character.id,
-    imageUrl: found.imageUrl,
-    candidateId,
-  })
+  let storagePath
+  try {
+    storagePath = await persistCharacterCandidate({
+      seriesId: character.seriesId,
+      characterId: character.id,
+      imageUrl: found.imageUrl,
+      candidateId,
+    })
+  } catch (err) {
+    const msg = String(err?.message || err)
+    if (/Failed to fetch reference image/i.test(msg)) {
+      return Response.json({
+        elenaCharacterId: character.id,
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        previousFalImageRecoverable: false,
+        reason: "original Fal URL expired or unreachable",
+        storage,
+        elenaMaster: "FAIL",
+        visualIdentity: existing.character.visualIdentity,
+        pendingApproval: false,
+        ...masterConstants(),
+      })
+    }
+    throw err
+  }
   if (isCanonicalStoragePath(storagePath)) {
     throw new Error("refused to persist Elena master as canonical.png")
   }
