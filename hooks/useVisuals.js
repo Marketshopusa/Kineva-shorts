@@ -40,8 +40,10 @@ export function useVisuals() {
           seriesId: series.id,
           provider,
           referenceImageUrl: planned.referenceImageUrl,
+          referenceImageUrls: planned.referenceImageUrls,
+          references: planned.references,
           aspectRatio: "9:16",
-          metadata: { sceneIndex, characterIds: planned.characterIds },
+          metadata: { sceneIndex, characterIds: planned.onScreenCharacterIds },
         }),
       })
 

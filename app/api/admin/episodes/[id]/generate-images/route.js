@@ -7,6 +7,13 @@ import { loadSeriesRail, railPayload } from "@/lib/series-rail"
 import { generateStill } from "@/lib/still-for-rail"
 import { uploadBuffer, imagePath, IMAGES_BUCKET } from "@/lib/supabase-storage"
 import { selectScenesToGenerate } from "@/lib/storyboard"
+import {
+  REQUIRED_VISUAL_CHARACTER_NOT_LOCKED,
+  planEpisodeStills,
+  planSceneStill,
+} from "@/lib/still-plan"
+import { preflightSceneStillGeneration } from "@/lib/still-preflight"
+import { jsonRailError } from "@/lib/http-rail-error"
 
 async function persistStill(episodeId, sceneIndex, dataUrl, promptText) {
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "")
@@ -32,6 +39,7 @@ export async function POST(request, { params }) {
   const body = await request.json().catch(() => ({}))
   const onlyMissing = body.onlyMissing !== false
   const sceneIndex = body.sceneIndex
+  const dryRun = body.dryRun === true
   const config = await getAIConfig()
 
   const episode = await prisma.episode.findUnique({
@@ -47,6 +55,20 @@ export async function POST(request, { params }) {
 
   const scenes = episode.screenplay?.scenes || []
   if (scenes.length === 0) return Response.json({ error: "No scenes found" }, { status: 400 })
+
+  if (dryRun) {
+    return Response.json({
+      dryRun: true,
+      generated: 0,
+      falCalls: 0,
+      provider,
+      usedLeonardo: false,
+      contentRail: railPayload(rail, readiness),
+      plans: planEpisodeStills(episode.screenplay, characters),
+      episodeId,
+      total: scenes.length,
+    })
+  }
 
   const existingIndexes = new Set((episode.images || []).map((img) => img.sceneIndex))
 
@@ -71,22 +93,42 @@ export async function POST(request, { params }) {
     generated: 0,
     failed: 0,
     errors: [],
+    blocked: [],
     provider,
     usedLeonardo: false,
     contentRail: railPayload(rail, readiness),
     indexes: queue.map((item) => item.index),
+    falCalls: 0,
   }
 
   async function generateOne({ scene, index }) {
+    const plan = planSceneStill(scene, characters)
+    if (!plan.ready) {
+      const err = new Error(plan.blockReason || "still not ready")
+      err.code = plan.blockReason?.startsWith(REQUIRED_VISUAL_CHARACTER_NOT_LOCKED)
+        ? REQUIRED_VISUAL_CHARACTER_NOT_LOCKED
+        : plan.blockReason
+      throw err
+    }
+
+    const preflight = await preflightSceneStillGeneration({ scene, characters })
     const planned = buildSceneVisualPrompt({ scene, characters, series, maxLength: 1500 })
     const { dataUrl, provider: used } = await generateStill({
       rail,
       config,
       prompt: planned.prompt,
-      referenceImageUrl: planned.referenceImageUrl,
+      referenceImageUrls: preflight.referenceImageUrls,
+      references: preflight.references,
       aspectRatio: "9:16",
-      metadata: { episodeId, sceneIndex: index, characterIds: planned.characterIds },
+      metadata: {
+        episodeId,
+        sceneIndex: index,
+        characterIds: planned.onScreenCharacterIds,
+        onScreenCharacterIds: planned.onScreenCharacterIds,
+        providerRoute: planned.providerRoute,
+      },
     })
+    results.falCalls += used === "fal" ? 1 : 0
     if (used === "leonardo") results.usedLeonardo = true
     await persistStill(episodeId, index, dataUrl, planned.prompt)
     results.generated++
@@ -98,6 +140,10 @@ export async function POST(request, { params }) {
     } catch (err) {
       results.failed++
       results.errors.push(`scene ${item.index}: ${err.message}`)
+      results.blocked.push({
+        sceneIndex: item.index,
+        reason: err.code || err.message,
+      })
       const quota = err?.status === 429 || /BLOQUEADO POR CUOTA|429/i.test(String(err?.message || ""))
       if (quota) {
         return Response.json({ ...results, episodeId, total: scenes.length, code: "GEMINI_IMAGE_BLOCKED_QUOTA" }, { status: 429 })
@@ -109,6 +155,11 @@ export async function POST(request, { params }) {
       if (err?.code === "REFERENCE_AWARE_FAILED" || /REFERENCE_AWARE_FAILED/.test(String(err?.message || ""))) {
         return Response.json({ ...results, episodeId, total: scenes.length, code: "REFERENCE_AWARE_FAILED" }, { status: 502 })
       }
+      if (err?.code === REQUIRED_VISUAL_CHARACTER_NOT_LOCKED || String(err?.message || "").includes(REQUIRED_VISUAL_CHARACTER_NOT_LOCKED)) {
+        continue
+      }
+      const mapped = jsonRailError(err)
+      if (mapped) return mapped
       break
     }
   }

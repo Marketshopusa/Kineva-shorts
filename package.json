@@ -8,7 +8,7 @@
     "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-default-type=module --test tests/tts/*.test.mjs tests/storage/*.test.mjs tests/images/*.test.mjs tests/rails/*.test.mjs tests/watch/*.test.mjs tests/storyboard/*.test.mjs tests/characters/*.test.mjs",
+    "test": "node --experimental-default-type=module --test tests/tts/*.test.mjs tests/storage/*.test.mjs tests/images/*.test.mjs tests/rails/*.test.mjs tests/watch/*.test.mjs tests/storyboard/*.test.mjs tests/characters/*.test.mjs tests/stills/*.test.mjs",
     "commit": "node scripts/ai-commit.mjs",
     "commit:watch": "node scripts/ai-commit.mjs --watch"
   },

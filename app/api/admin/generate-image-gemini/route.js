@@ -11,7 +11,7 @@ export async function POST(request) {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   try {
-    const { prompt, seriesId, referenceImageUrl, aspectRatio, metadata } = await request.json()
+    const { prompt, seriesId, referenceImageUrl, referenceImageUrls, references, aspectRatio, metadata } = await request.json()
     if (!prompt) return Response.json({ error: "Missing prompt" }, { status: 400 })
     if (!seriesId) return Response.json({ error: "seriesId required for image rail" }, { status: 400 })
 
@@ -20,10 +20,17 @@ export async function POST(request) {
     const config = await getAIConfig()
     const { dataUrl, provider } = await generateStillForRail(
       rail,
-      { prompt, referenceImageUrl: referenceImageUrl || null, aspectRatio: aspectRatio || "9:16", metadata },
+      {
+        prompt,
+        referenceImageUrl: referenceImageUrl || null,
+        referenceImageUrls: referenceImageUrls || undefined,
+        references: references || undefined,
+        aspectRatio: aspectRatio || "9:16",
+        metadata,
+      },
       config,
     )
-    return Response.json({ image_url: dataUrl, provider, referenceImageUrl: referenceImageUrl || null })
+    return Response.json({ image_url: dataUrl, provider, referenceImageUrl: referenceImageUrl || null, referenceImageUrls: referenceImageUrls || [] })
   } catch (err) {
     console.error("Gemini image generation error:", err)
     return jsonRailError(err) || Response.json(
