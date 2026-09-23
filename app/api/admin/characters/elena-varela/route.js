@@ -256,7 +256,11 @@ async function approveElenaCanonical(character, candidatePath) {
 
   const fresh = await prisma.character.update({
     where: { id: character.id },
-    data: { referenceImageUrl: canonicalPath, referenceEpisode: null },
+    data: {
+      appearance: applyElenaRegenAppearance(character.appearance),
+      referenceImageUrl: canonicalPath,
+      referenceEpisode: null,
+    },
   })
   const payload = await loadElenaMasterPayload(fresh)
   const preserved = payload.candidates.some((item) => item.path === requested)

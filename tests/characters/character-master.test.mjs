@@ -104,7 +104,7 @@ test("a second generate is blocked once a candidate exists unless regenerate is 
   assert.equal(elenaMasterGenerateAllowed(four, { regenerate: true }), false)
 })
 
-test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dark studio", () => {
+test("authorized regen prompt matches the accepted auburn-red look-ref Elena, not dark studio", () => {
   const character = {
     ...REAL_ELENA,
     appearance: applyElenaRegenAppearance(REAL_ELENA.appearance),
@@ -115,9 +115,10 @@ test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dar
     premise: "Elena recibe una llamada.",
   })
   assert.match(prompt, /Venezuelan Latina/)
-  assert.match(prompt, /light blue or grey-blue/)
+  assert.match(prompt, /green eyes/)
+  assert.match(prompt, /auburn-red hair/)
   assert.match(prompt, /fair luminous white-Latina skin/)
-  assert.match(prompt, /oval or heart-shaped/)
+  assert.match(prompt, /oval feminine face/)
   assert.match(prompt, /rounded feminine chin|small rounded female chin/)
   assert.match(prompt, /real camera photograph|DSLR photograph/)
   assert.match(prompt, /MUST NOT have a square face/)
@@ -156,6 +157,7 @@ test("approve copies the chosen candidate to canonical without deleting it or ca
   let generateCalls = 0
   const approved = APPROVED_ELENA_CANDIDATE_PATH
   assert.equal(isApprovedElenaCandidatePath(approved), true)
+  assert.equal(isApprovedElenaCandidatePath("characters/2/2/candidates/6b4cf693-485d-448b-97a3-c9db96fe9756.png"), false)
   assert.equal(isApprovedElenaCandidatePath("characters/2/2/candidates/recovered-01a0cb32-ae19-7541-9457-9a9d3aabce5c.png"), false)
   const result = await approveCanonicalFromCandidate({
     seriesId: 2,
