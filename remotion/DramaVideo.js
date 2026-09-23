@@ -4,6 +4,8 @@ import Scene from "./Scene"
 import Watermark from "./Watermark"
 import { ensureReadableDurations } from "../lib/subtitleUtils"
 
+/** Preview animatic only (Ken Burns on stills). Never the cinematic MiniMax episode. */
+
 const TRANSITION_FRAMES = 15 // 0.5s black fade between scenes
 
 function BlackFade({ durationFrames }) {

@@ -7,6 +7,7 @@ import {
   RENDERS_BUCKET,
   renderPath,
   motionRenderPath,
+  minimaxRenderPath,
   clipPath,
   isAllowedRenderObjectPath,
 } from "@/lib/supabase-storage"
@@ -30,6 +31,8 @@ export async function POST(request, { params }) {
       let storagePath = renderPath(episode.seriesId, episode.id)
       if (body.kind === "motion") {
         storagePath = motionRenderPath(episode.seriesId, episode.id)
+      } else if (body.kind === "minimax") {
+        storagePath = minimaxRenderPath(episode.seriesId, episode.id)
       } else if (body.kind === "clip" && body.shotId) {
         storagePath = clipPath(episode.seriesId, episode.id, body.shotId)
       } else if (body.path) {

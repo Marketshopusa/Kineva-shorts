@@ -4,6 +4,8 @@ import MotionShot from "./MotionShot"
 import Watermark from "./Watermark"
 import { splitIntoChunks } from "../lib/subtitleUtils"
 
+/** Compositor: MiniMax (or other) VIDEO CLIPs + audio + captions. Not a motion generator. */
+
 const TRANSITION_FRAMES = 4
 
 function BlackFade({ durationFrames }) {

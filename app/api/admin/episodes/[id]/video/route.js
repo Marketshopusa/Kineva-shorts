@@ -6,6 +6,7 @@ import {
   RENDERS_BUCKET,
   renderCandidates,
   motionRenderPath,
+  minimaxRenderPath,
   legacyAnimaticPath,
 } from "@/lib/supabase-storage"
 import { classifyRenderVersion } from "@/lib/video-clip-storage.js"
@@ -26,8 +27,13 @@ async function resolveRender(episodeId, version) {
   if (!episode) return { error: "Not found", status: 404 }
 
   const motionPath = motionRenderPath(episode.seriesId, episode.id)
+  const minimaxPath = minimaxRenderPath(episode.seriesId, episode.id)
   const legacyPath = legacyAnimaticPath(episode.seriesId, episode.id)
-  const [motion, legacy] = await Promise.all([trySign(motionPath), trySign(legacyPath)])
+  const [motion, minimax, legacy] = await Promise.all([
+    trySign(motionPath),
+    trySign(minimaxPath),
+    trySign(legacyPath),
+  ])
 
   const paths = renderCandidates(episode.seriesId, episode.id, { version })
   let chosen = null
@@ -36,6 +42,8 @@ async function resolveRender(episodeId, version) {
     try {
       const hit = storagePath === motionPath
         ? motion
+        : storagePath === minimaxPath
+          ? minimax
         : storagePath === legacyPath
           ? legacy
           : await trySign(storagePath)
@@ -61,10 +69,13 @@ async function resolveRender(episodeId, version) {
     url: chosen.url,
     version: classifyRenderVersion(chosen.storagePath),
     motionPath,
+    minimaxPath,
     legacyPath,
     hasMotion: Boolean(motion),
+    hasMinimax: Boolean(minimax),
     hasLegacy: Boolean(legacy),
     motionUrl: motion?.url || null,
+    minimaxUrl: minimax?.url || null,
     legacyUrl: legacy?.url || null,
   }
 }
@@ -116,10 +127,13 @@ export async function GET(request, { params }) {
       url: resolved.url,
       version: resolved.version,
       hasMotion: resolved.hasMotion,
+      hasMinimax: resolved.hasMinimax,
       hasLegacy: resolved.hasLegacy,
       motionPath: resolved.motionPath,
+      minimaxPath: resolved.minimaxPath,
       legacyPath: resolved.legacyPath,
       motionUrl: resolved.motionUrl,
+      minimaxUrl: resolved.minimaxUrl,
       legacyUrl: resolved.legacyUrl,
     }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {

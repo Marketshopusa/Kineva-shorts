@@ -5,16 +5,21 @@ import prisma from "@/lib/prisma"
 import { loadSeriesRail, railPayload } from "@/lib/series-rail"
 import { jsonRailError } from "@/lib/http-rail-error"
 import { resolveStoragePathForProvider } from "@/lib/character-reference-provider.js"
-import { resolveVideoElementsForProvider, publicVideoElements, falElementsFromResolved } from "@/lib/video-elements.js"
-import { planEpisodeMotionShots, shotAllowsStartFrame, assertNoSplitScreenPrompt } from "@/lib/video-shot-plan.js"
-import {
-  KLING_O1_MODEL,
-  buildKlingO1Body,
-  submitKlingO1Job,
-  getKlingO1Status,
-  getKlingO1Result,
-} from "@/lib/providers/video/kling.js"
+import { publicVideoElements } from "@/lib/video-elements.js"
+import { planEpisodeMotionShots, assertNoSplitScreenPrompt, shotAllowsStartFrame } from "@/lib/video-shot-plan.js"
 import { clipPath } from "@/lib/video-clip-storage.js"
+import {
+  inspectClipEngineReadiness,
+  resolveClipEngine,
+  assertPremiumVideoNotUsed,
+} from "@/lib/video-engine.js"
+import { auditMinimaxH3 } from "@/lib/providers/video/minimax-h3.js"
+import {
+  createVideoJob,
+  submitJobToWorker,
+  pollWorkerJob,
+  queueEpisodeShots,
+} from "@/lib/providers/video/kineva-engine.js"
 
 function publicShots(plan) {
   return (plan.shots || []).map((shot) => ({
@@ -31,6 +36,8 @@ function publicShots(plan) {
     environmentMotion: shot.environmentMotion,
     dialogue: shot.dialogue,
     narration: shot.narration,
+    imagePrompt: shot.imagePrompt,
+    motionPrompt: shot.motionPrompt,
     videoPrompt: shot.videoPrompt,
     model: shot.model,
     allowStartFrame: shot.allowStartFrame,
@@ -43,6 +50,14 @@ function publicShots(plan) {
 function stillPathForScene(images, sceneIndex) {
   const row = (images || []).find((img) => Number(img.sceneIndex) === Number(sceneIndex))
   return row?.filePath || null
+}
+
+async function firstFrameForShot(episode, shot) {
+  if (!shotAllowsStartFrame(shot.sceneIndex)) return null
+  const stillPath = stillPathForScene(episode.images, shot.sceneIndex)
+  if (!stillPath || /split/i.test(stillPath)) return { storagePath: null, providerUrl: null, skipped: "split-screen still refused" }
+  const signed = await resolveStoragePathForProvider(stillPath)
+  return { storagePath: stillPath, providerUrl: signed.providerUrl }
 }
 
 async function loadMotionContext(episodeId) {
@@ -68,42 +83,28 @@ export async function GET(request, { params }) {
   const episodeId = parseInt(id, 10)
   if (Number.isNaN(episodeId)) return Response.json({ error: "Invalid id" }, { status: 400 })
 
-  const url = new URL(request.url)
-  const requestId = url.searchParams.get("requestId")
-  if (requestId) {
-    try {
-      const status = await getKlingO1Status(requestId)
-      let result = null
-      if (status.status === "COMPLETED") {
-        result = await getKlingO1Result(requestId)
-      }
-      return Response.json({
-        requestId,
-        status: status.status,
-        videoUrl: result?.videoUrl || null,
-        model: KLING_O1_MODEL,
-      })
-    } catch (err) {
-      return jsonRailError(err) || Response.json({ error: err.message }, { status: 502 })
-    }
-  }
-
   try {
     const ctx = await loadMotionContext(episodeId)
     if (ctx.error) return Response.json({ error: ctx.error }, { status: ctx.status })
+    const engine = resolveClipEngine()
+    const clipReady = inspectClipEngineReadiness()
     return Response.json({
       dryRun: true,
+      falCalls: 0,
+      falVideoCalls: 0,
       episodeId,
       seriesId: ctx.episode.seriesId,
       episodeNumber: ctx.episode.episodeNumber,
-      model: KLING_O1_MODEL,
-      projectedUsd: ctx.plan.projectedUsd,
+      engine: engine.id,
+      mode: engine.mode,
+      model: engine.model,
+      projectedUsd: 0,
       totalDurationSec: ctx.plan.totalDurationSec,
       shotCount: ctx.plan.shotCount,
-      capUsd: ctx.plan.capUsd,
-      withinCap: ctx.plan.withinCap,
       shots: publicShots({ ...ctx.plan, seriesId: ctx.episode.seriesId, episodeId }),
       contentRail: railPayload(ctx.rail, ctx.readiness),
+      clipEngine: clipReady,
+      minimaxAudit: auditMinimaxH3(),
       signedUrlPersisted: false,
       lipsyncClips: 0,
     })
@@ -123,40 +124,55 @@ export async function POST(request, { params }) {
   const action = body.action || (body.dryRun === false ? "submit" : "plan")
 
   try {
+    assertPremiumVideoNotUsed(process.env, body.provider || body.model)
     const ctx = await loadMotionContext(episodeId)
     if (ctx.error) return Response.json({ error: ctx.error }, { status: ctx.status })
-    const { episode, characters, rail, readiness, plan } = ctx
+    const { episode, rail, readiness, plan } = ctx
+    const engine = resolveClipEngine()
+    const clipReady = inspectClipEngineReadiness()
+    const audit = auditMinimaxH3()
 
-    if (action === "status" && body.requestId) {
-      const status = await getKlingO1Status(body.requestId)
-      let result = null
-      if (status.status === "COMPLETED") {
-        result = await getKlingO1Result(body.requestId)
+    if (action === "status") {
+      const ids = body.jobs || (body.jobId || body.workerJobId
+        ? [{ jobId: body.jobId, workerJobId: body.workerJobId || body.jobId }]
+        : [])
+      if (!ids.length) {
+        return Response.json({ error: "jobId required", falVideoCalls: 0 }, { status: 400 })
+      }
+      const jobs = []
+      for (const item of ids) {
+        jobs.push(await pollWorkerJob({
+          jobId: item.jobId,
+          workerJobId: item.workerJobId || item.jobId,
+        }))
       }
       return Response.json({
-        requestId: body.requestId,
-        status: status.status,
-        videoUrl: result?.videoUrl || null,
-        model: KLING_O1_MODEL,
+        jobs: jobs.length === 1 ? undefined : jobs,
+        ...(jobs.length === 1 ? jobs[0] : {}),
+        falCalls: 0,
+        falVideoCalls: 0,
+        model: engine.model,
       })
     }
 
     const publicPlan = {
-      dryRun: action !== "submit",
+      dryRun: action !== "submit" && action !== "generate-episode",
       generated: 0,
       falCalls: 0,
+      falVideoCalls: 0,
       episodeId,
       seriesId: episode.seriesId,
       episodeNumber: episode.episodeNumber,
-      model: KLING_O1_MODEL,
-      projectedUsd: plan.projectedUsd,
+      engine: engine.id,
+      mode: engine.mode,
+      model: engine.model,
+      projectedUsd: 0,
       totalDurationSec: plan.totalDurationSec,
       shotCount: plan.shotCount,
-      capUsd: plan.capUsd,
-      withinCap: plan.withinCap,
-      usdPerSecond: plan.usdPerSecond,
       shots: publicShots({ ...plan, seriesId: episode.seriesId, episodeId }),
       contentRail: railPayload(rail, readiness),
+      clipEngine: clipReady,
+      minimaxAudit: audit,
       signedUrlPersisted: false,
       lipsyncClips: 0,
       elenaCanonical: "characters/2/2/canonical.png",
@@ -164,8 +180,40 @@ export async function POST(request, { params }) {
       mateo: "VOICE_ONLY",
     }
 
-    if (action !== "submit") {
+    if (action !== "submit" && action !== "generate-episode") {
       return Response.json(publicPlan)
+    }
+
+    if (!clipReady.ready) {
+      const block = clipReady.blocks[0]
+      const err = new Error(block?.detail || "VIDEO_WORKER_MISSING")
+      err.code = block?.code || "VIDEO_WORKER_MISSING"
+      throw err
+    }
+
+    if (action === "generate-episode") {
+      const firstFramesByShot = {}
+      for (const shot of plan.shots) {
+        firstFramesByShot[shot.shotId] = await firstFrameForShot(episode, shot)
+        assertNoSplitScreenPrompt(shot.videoPrompt)
+      }
+      const jobs = await queueEpisodeShots({
+        ...plan,
+        episodeId,
+        seriesId: episode.seriesId,
+      }, {
+        firstFramesByShot,
+        chainLastFrame: body.chainLastFrame === true,
+      })
+      return Response.json({
+        ...publicPlan,
+        dryRun: false,
+        generated: 0,
+        queued: jobs.length,
+        jobs,
+        status: "QUEUED",
+        note: "GPU generation is async. Poll action=status. Vercel does not wait on MiniMax.",
+      })
     }
 
     const shot = plan.shots.find((item) => item.shotId === body.shotId)
@@ -175,45 +223,26 @@ export async function POST(request, { params }) {
     }
     assertNoSplitScreenPrompt(shot.videoPrompt)
 
-    const onScreen = characters.filter((c) => shot.onScreenCharacterIds.includes(Number(c.id)))
-    const resolved = await resolveVideoElementsForProvider(onScreen)
-    const falElements = falElementsFromResolved(resolved)
-
-    let imageUrls = []
-    if (shot.allowStartFrame && shotAllowsStartFrame(shot.sceneIndex)) {
-      const stillPath = stillPathForScene(episode.images, shot.sceneIndex)
-      if (stillPath && !/split/i.test(stillPath)) {
-        const signedStill = await resolveStoragePathForProvider(stillPath)
-        if (signedStill?.providerUrl) imageUrls = [signedStill.providerUrl]
-      }
-    }
-
-    const prompt = imageUrls.length
-      ? `Take @Image1 as composition, wardrobe, and lighting reference for the opening instant, then immediately animate living performance. Do not hold a still photograph. ${shot.videoPrompt}`
-      : shot.videoPrompt
-    assertNoSplitScreenPrompt(prompt)
-
-    const falBody = buildKlingO1Body({
-      prompt,
-      elements: falElements,
-      imageUrls,
+    const firstFrame = await firstFrameForShot(episode, shot)
+    const job = createVideoJob({
+      episodeId,
+      seriesId: episode.seriesId,
+      shotId: shot.shotId,
+      prompt: shot.videoPrompt,
+      firstFrame,
       duration: shot.duration,
-      aspectRatio: "9:16",
+      characterIds: shot.onScreenCharacterIds,
+      continuity: { sceneIndex: shot.sceneIndex, sharedSpace: shot.sharedSpace },
+      chainLastFrame: body.chainLastFrame === true,
     })
-    const submitted = await submitKlingO1Job(falBody)
-
+    const queued = await submitJobToWorker(job)
     return Response.json({
       ...publicPlan,
       dryRun: false,
-      falCalls: 1,
+      job: queued,
       shotId: shot.shotId,
-      sceneIndex: shot.sceneIndex,
-      requestId: submitted.requestId,
-      status: submitted.status,
+      status: queued.status,
       clipPath: clipPath(episode.seriesId, episode.id, shot.shotId),
-      characterElements: publicVideoElements(resolved),
-      usedStartFrame: imageUrls.length > 0,
-      signedUrlPersisted: false,
     })
   } catch (err) {
     return jsonRailError(err) || Response.json({ error: err.message, code: err.code || "VIDEO_GENERATE_FAILED" }, { status: 500 })

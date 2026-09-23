@@ -13,6 +13,10 @@ import {
   episodeBlurb,
   episodeCardCtaLabel,
   episodePipelineLabels,
+  watchVersionLabel,
+  watchVersionOptions,
+  watchPlayQuery,
+  watchDownloadName,
 } from "../../lib/episode-watch.js"
 
 const populated = {
@@ -104,6 +108,15 @@ test("MP4 unlocks Watch Episode CTA", () => {
 
 test("empty in-progress episode CTA is Continue Visuals", () => {
   assert.equal(episodeCardCtaLabel("continue"), "Continue Visuals")
+})
+
+test("Watch labels distinguish MiniMax standard from Ken Burns preview", () => {
+  assert.equal(watchVersionLabel("minimax"), "Standard (MiniMax H3)")
+  assert.equal(watchVersionLabel("legacy"), "Preview Animatic")
+  assert.equal(watchPlayQuery("minimax"), "&version=minimax")
+  assert.equal(watchDownloadName("minimax"), "episode-1-minimax-v1.mp4")
+  const opts = watchVersionOptions({ hasMinimax: true, hasLegacy: true, hasMotion: false })
+  assert.deepEqual(opts.map((o) => o.id), ["minimax", "legacy"])
 })
 
 test("multiple populated episodes keep independent watch/view actions", () => {

@@ -29,9 +29,7 @@ import {
   shouldApplyLipsync,
 } from "../../lib/video-shot-plan.js"
 import {
-  KLING_O1_MODEL,
   KLING_O1_USD_PER_SECOND,
-  MOTION_V1_HARD_CAP_USD,
   klingCostUsd,
   assertCostWithinCap,
   buildKlingO1Body,
@@ -83,6 +81,7 @@ test("legacy animatic path stays episode-1.mp4 and is not the motion file", () =
 
 test("Watch prefers motion V1 then isolates legacy animatic", () => {
   assert.deepEqual(renderCandidates(2, 2), [
+    "series/2/episodes/2/episode-1-minimax-v1.mp4",
     "series/2/episodes/2/episode-1-motion-v1.mp4",
     "series/2/episodes/2/episode-1.mp4",
     "series/2/episodes/2/kineva-demo.mp4",
@@ -142,15 +141,21 @@ test("signed canonicals are used for Fal elements and never treated as stored ca
   ])
 })
 
-test("Episode 1 motion shot plan is 8-12 clips, 55s+, under $9, Kling O1", () => {
+test("Episode 1 motion shot plan is 8-12 clips, 55s+, MiniMax standard (no Fal video cost)", () => {
   const plan = planEpisodeMotionShots(screenplay(), [ELENA, MATEO, IVAN], {
     seriesId: 2,
     episodeNumber: 1,
   })
   assert.ok(plan.shotCount >= 8 && plan.shotCount <= 12)
   assert.ok(plan.totalDurationSec >= 55)
-  assert.ok(plan.projectedUsd <= MOTION_V1_HARD_CAP_USD)
-  assert.equal(plan.model, KLING_O1_MODEL)
+  assert.equal(plan.projectedUsd, 0)
+  assert.equal(plan.model, "minimax_h3")
+  assert.equal(plan.engine, "self_hosted_workflow")
+  assert.ok(plan.shots[0].imagePrompt)
+  assert.ok(plan.shots[0].motionPrompt)
+  assert.notEqual(plan.shots[0].imagePrompt, plan.shots[0].motionPrompt)
+  assert.match(plan.shots[0].motionPrompt, /FACIAL MOTION/)
+  assert.match(plan.shots[0].motionPrompt, /CAMERA MOTION/)
   assert.equal(klingCostUsd(60), 6.72)
   assert.equal(assertCostWithinCap(6.72), 6.72)
   assert.throws(() => assertCostWithinCap(9.01), /VIDEO_COST_CAP/)

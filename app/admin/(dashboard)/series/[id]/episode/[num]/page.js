@@ -16,7 +16,7 @@ import Breadcrumb from "@/components/ui/Breadcrumb"
 import SubtitleEditor from "@/components/ui/SubtitleEditor"
 import StoryboardFields from "@/components/ui/StoryboardFields"
 import SharePanel from "@/components/ui/SharePanel"
-import { episodeIsPopulated, shouldRedirectToWizard } from "@/lib/episode-watch"
+import { episodeIsPopulated, shouldRedirectToWizard, watchDownloadName, watchPlayQuery, watchVersionLabel, watchVersionOptions } from "@/lib/episode-watch"
 
 const TYPE_COLORS = {
   HOOK: "bg-red-500/20 text-red-400",
@@ -362,37 +362,33 @@ export default function EpisodeDetailPage({ params }) {
             <h2 className="text-sm font-semibold">Watch episode</h2>
             <a
               href={renderVideo.url}
-              download={renderVideo.version === "motion" ? "episode-1-motion-v1.mp4" : "kineva-demo.mp4"}
+              download={watchDownloadName(renderVideo.version)}
               className="text-xs text-accent hover:underline"
             >
               Download
             </a>
           </div>
-          {renderVideo.hasMotion && renderVideo.hasLegacy ? (
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => setRenderVideo((prev) => prev ? { ...prev, version: "motion" } : prev)}
-                className={`text-xs px-2 py-1 rounded ${renderVideo.version !== "legacy" ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
-              >
-                Motion V1
-              </button>
-              <button
-                type="button"
-                onClick={() => setRenderVideo((prev) => prev ? { ...prev, version: "legacy" } : prev)}
-                className={`text-xs px-2 py-1 rounded ${renderVideo.version === "legacy" ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
-              >
-                Legacy Animatic
-              </button>
+          {watchVersionOptions(renderVideo).length > 1 ? (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {watchVersionOptions(renderVideo).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setRenderVideo((prev) => prev ? { ...prev, version: opt.id } : prev)}
+                  className={`text-xs px-2 py-1 rounded ${renderVideo.version === opt.id ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           ) : (
             <div className="text-[11px] text-text-muted mb-2">
-              {renderVideo.version === "motion" ? "Motion V1" : "Legacy Animatic"}
+              {watchVersionLabel(renderVideo.version)}
             </div>
           )}
           <video
             key={`${episode.id}-${renderVideo.version || "default"}`}
-            src={`/api/admin/episodes/${episode.id}/video?play=1${renderVideo.version === "legacy" ? "&version=legacy" : ""}`}
+            src={`/api/admin/episodes/${episode.id}/video?play=1${watchPlayQuery(renderVideo.version)}`}
             controls
             playsInline
             className="w-full bg-black rounded-lg"
