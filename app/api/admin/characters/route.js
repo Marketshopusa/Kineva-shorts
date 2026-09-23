@@ -1,11 +1,11 @@
 export const dynamic = "force-dynamic";
 import { visualIdentityStatus } from "@/lib/character-identity"
 import prisma from "@/lib/prisma"
-import { requireAdmin } from "@/lib/adminAuth"
+import { requireAdmin, requireAdminOrTaskToken } from "@/lib/adminAuth"
 import { masterCandidateFields } from "@/lib/elena-varela-master-server.js"
 
 export async function GET(request) {
-  const session = await requireAdmin()
+  const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   try {
