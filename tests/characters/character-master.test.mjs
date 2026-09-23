@@ -193,7 +193,7 @@ test("look-ref candidate persist writes candidates/ from a photo JPEG and never 
       uploads.push({ bucket, storagePath, bytes: buffer.length, contentType })
     },
   })
-  assert.equal(path, "characters/2/2/candidates/from-model-refs.png")
+  assert.equal(path, "characters/2/2/candidates/from-model-refs.jpg")
   assert.equal(isCanonicalStoragePath(path), false)
   assert.doesNotMatch(path, /look-refs/)
   assert.equal(uploads[0].contentType, "image/jpeg")
