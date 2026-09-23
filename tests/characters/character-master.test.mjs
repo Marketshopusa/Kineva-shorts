@@ -179,6 +179,25 @@ test("approve copies the chosen candidate to canonical without deleting it or ca
   assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
 })
 
+test("look-ref candidate persist writes candidates/ from a photo JPEG and never canonical.png or Fal", async () => {
+  const uploads = []
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64")
+  const path = await persistCharacterCandidate({
+    seriesId: 2,
+    characterId: 2,
+    candidateId: "from-model-refs",
+    imageUrl: `data:image/jpeg;base64,${jpeg}`,
+    uploadFn: async (bucket, storagePath, buffer, contentType) => {
+      uploads.push({ bucket, storagePath, bytes: buffer.length, contentType })
+    },
+  })
+  assert.equal(path, "characters/2/2/candidates/from-model-refs.png")
+  assert.equal(isCanonicalStoragePath(path), false)
+  assert.doesNotMatch(path, /look-refs/)
+  assert.equal(uploads[0].contentType, "image/jpeg")
+  assert.equal(uploads.some((item) => /canonical\.png$/.test(item.storagePath)), false)
+})
+
 test("look-reference photos are stored outside candidates and become Fal image_url", async () => {
   const uploads = []
   const path = await persistLookReference({

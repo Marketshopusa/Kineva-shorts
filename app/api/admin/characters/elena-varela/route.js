@@ -319,6 +319,55 @@ export async function POST(request) {
     })
   }
 
+  if (body.persistLookRefCandidate === true) {
+    if (body.generate === true || body.approve === true) {
+      return Response.json({
+        error: "Look-ref persist does not generate or approve",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        elenaMaster: "FAIL",
+      }, { status: 400 })
+    }
+    const dataUrl = String(body.dataUrl || "")
+    if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrl.length > 6_000_000) {
+      return Response.json({
+        error: "Invalid look-ref candidate image",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        elenaMaster: "FAIL",
+      }, { status: 400 })
+    }
+
+    const candidateId = randomUUID()
+    const storagePath = await persistCharacterCandidate({
+      seriesId: character.seriesId,
+      characterId: character.id,
+      imageUrl: dataUrl,
+      candidateId,
+    })
+    if (isCanonicalStoragePath(storagePath)) {
+      throw new Error("refused to persist Elena master as canonical.png")
+    }
+
+    const fresh = await prisma.character.update({
+      where: { id: character.id },
+      data: { referenceImageUrl: null, referenceEpisode: null },
+    })
+    const payload = await loadElenaMasterPayload(fresh)
+    return Response.json({
+      elenaCharacterId: character.id,
+      ...payload,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      elenaMaster: "PASS",
+      storagePath,
+      visualIdentity: payload.character.visualIdentity,
+      pendingApproval: payload.pendingApproval,
+      previousCandidateKept: true,
+      ...masterConstants(),
+    })
+  }
+
   if (body.approve === true) {
     if (body.generate === true) {
       return Response.json({
