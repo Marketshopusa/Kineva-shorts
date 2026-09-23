@@ -7,15 +7,21 @@ import {
 import { persistStoryboardV1OnScreenplay } from "../../lib/derive-storyboard.js"
 import { buildSceneVisualPrompt } from "../../lib/buildSceneVisualPrompt.js"
 import {
+  IDENTITY_STILL_REQUIRES_FAL,
   REQUIRED_VISUAL_CHARACTER_NOT_LOCKED,
   planSceneStill,
   planEpisodeStills,
   runStillGenerationIfReady,
 } from "../../lib/still-plan.js"
 import {
+  assertIdentityStillSpendGate,
+  falModelIdFromUrl,
   preflightSceneStillGeneration,
   resolveStillInputForProvider,
 } from "../../lib/still-preflight.js"
+import { stillPersistTargetFromDataUrl } from "../../lib/still-persist.js"
+import { imagePath } from "../../lib/supabase-storage.js"
+import { selectScenesToGenerate } from "../../lib/storyboard.js"
 import {
   STILL_ROUTE_MULTI_REFERENCE,
   STILL_ROUTE_SINGLE_REFERENCE,
@@ -381,4 +387,69 @@ test("resolveStillInputForProvider signs private paths and leaves Character unto
   assert.equal(character.referenceImageUrl, "characters/2/2/canonical.png")
   assert.equal(resolved.referenceImageUrls[0], signed(ELENA.referenceImageUrl))
   assert.equal(resolved.referenceImageUrl.startsWith("https://"), true)
+})
+
+test("Scene 1 queue is only sceneIndex 0", () => {
+  const scenes = persisted().scenes
+  const queue = selectScenesToGenerate(scenes, new Set(), { sceneIndex: 0 })
+  assert.deepEqual(queue.map((item) => item.index), [0])
+  assert.equal(queue.length, 1)
+  assert.equal(scenes.length, 6)
+})
+
+test("Scene 1 spend gate requires Fal kontext", () => {
+  const scene1 = persisted().scenes[0]
+  const plan = planSceneStill(scene1, [ELENA, MATEO, IVAN])
+  const input = {
+    prompt: scene1.storyboard.visualPrompt,
+    referenceImageUrl: signed(ELENA.referenceImageUrl),
+    aspectRatio: "9:16",
+  }
+  const gate = assertIdentityStillSpendGate({
+    rail: { imageProvider: "fal" },
+    plan,
+    resolvedInput: input,
+  })
+  assert.equal(plan.providerRoute, "SINGLE_REFERENCE")
+  assert.equal(gate.model, "fal-ai/flux-pro/kontext")
+  assert.equal(falModelIdFromUrl(FAL_KONTEXT_MODEL), "fal-ai/flux-pro/kontext")
+  assert.throws(
+    () => assertIdentityStillSpendGate({
+      rail: { imageProvider: "gemini" },
+      plan,
+      resolvedInput: input,
+    }),
+    (err) => err.code === IDENTITY_STILL_REQUIRES_FAL,
+  )
+})
+
+test("persisted Scene 1 visualPrompt is used, not a rewritten plot", () => {
+  const base = persisted().scenes[0]
+  const scene = {
+    ...base,
+    storyboard: {
+      ...base.storyboard,
+      visualPrompt: "PERSISTED SCENE 1: Elena Varela only, smartphone on worn wood table.",
+    },
+  }
+  const planned = buildSceneVisualPrompt({ scene, characters: [ELENA, MATEO, IVAN], series: SERIES })
+  assert.match(planned.prompt, /PERSISTED SCENE 1/)
+  assert.match(planned.prompt, /exact facial identity/)
+  assert.doesNotMatch(planned.prompt, /Mateo/)
+})
+
+test("still persist sniffs JPEG vs PNG and matches extension", () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const jpegTarget = stillPersistTargetFromDataUrl(2, 0, `data:image/jpeg;base64,${jpeg.toString("base64")}`, 99)
+  const pngTarget = stillPersistTargetFromDataUrl(2, 0, `data:image/png;base64,${png.toString("base64")}`, 100)
+  assert.equal(jpegTarget.contentType, "image/jpeg")
+  assert.equal(jpegTarget.extension, "jpg")
+  assert.equal(jpegTarget.storagePath, "episodes/2/0_99.jpg")
+  assert.equal(pngTarget.contentType, "image/png")
+  assert.equal(pngTarget.storagePath, "episodes/2/0_100.png")
+  assert.equal(imagePath(2, 0, 101, "jpg"), "episodes/2/0_101.jpg")
+  assert.equal(jpegTarget.aspectRatio, "9:16")
+  assert.equal(jpegTarget.width, 1080)
+  assert.equal(jpegTarget.height, 1920)
 })
