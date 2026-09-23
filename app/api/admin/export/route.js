@@ -10,6 +10,7 @@ import prisma from "@/lib/prisma"
 import { downloadAsBuffer, IMAGES_BUCKET } from "@/lib/supabase-storage"
 import { readDubBuffer } from "@/lib/dub-storage"
 import { selectDubForLang } from "@/lib/dubUtils"
+import { sniffImageContentType } from "@/lib/image-bytes"
 
 const FPS = 30
 
@@ -36,7 +37,9 @@ async function resolveImages(imageUrls) {
           if (!image) return null
           // Supabase storage path (e.g. episodes/135/2.png)
           const buffer = await downloadAsBuffer(IMAGES_BUCKET, image.filePath)
-          return `data:image/png;base64,${buffer.toString("base64")}`
+          const sniffed = sniffImageContentType(buffer)
+          const mime = sniffed !== "application/octet-stream" ? sniffed : "image/png"
+          return `data:${mime};base64,${buffer.toString("base64")}`
         }
         if (url.startsWith("data:")) return url
         if (url.startsWith("http://") || url.startsWith("https://")) {

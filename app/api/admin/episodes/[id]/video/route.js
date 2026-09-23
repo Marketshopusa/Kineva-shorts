@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic"
-import { requireAdmin } from "@/lib/adminAuth"
+import { requireAdminOrTaskToken } from "@/lib/adminAuth"
 import prisma from "@/lib/prisma"
 import { getSignedUrl, RENDERS_BUCKET, renderCandidates } from "@/lib/supabase-storage"
 
@@ -47,7 +47,7 @@ async function proxyMp4(request, url) {
 }
 
 export async function GET(request, { params }) {
-  const session = await requireAdmin()
+  const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   const { id } = await params
