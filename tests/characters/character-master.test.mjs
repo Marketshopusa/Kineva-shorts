@@ -5,10 +5,12 @@ import {
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
   ELENA_REGEN_APPEARANCE,
+  ELENA_LOOK_REF_PRIMARY,
   applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
   characterCandidatePath,
   characterCandidatePrefix,
+  characterLookRefPath,
   characterMasterImageSrc,
   elenaMasterGenerateAllowed,
   isApprovedElenaCandidatePath,
@@ -17,8 +19,9 @@ import {
   matchElenaVarela,
   APPROVED_ELENA_CANDIDATE_PATH,
 } from "../../lib/character-master.js"
-import { persistCharacterCandidate, approveCanonicalFromCandidate } from "../../lib/character-reference-storage.js"
+import { persistCharacterCandidate, approveCanonicalFromCandidate, persistLookReference } from "../../lib/character-reference-storage.js"
 import { visualIdentityStatus } from "../../lib/character-identity.js"
+import { buildFalStillRequest } from "../../lib/providers/images/still-request.js"
 
 const FIXTURE_ELENA_ID_7 = {
   id: 7,
@@ -91,12 +94,14 @@ test("a second generate is blocked once a candidate exists unless regenerate is 
     { path: "characters/2/2/candidates/regen.png" },
   ]
   const three = [...two, { path: "characters/2/2/candidates/look2.png" }]
+  const four = [...three, { path: "characters/2/2/candidates/look3.png" }]
   assert.equal(elenaMasterGenerateAllowed([]), true)
   assert.equal(elenaMasterGenerateAllowed(one), false)
   assert.equal(elenaMasterGenerateAllowed(one, { regenerate: true }), true)
   assert.equal(elenaMasterGenerateAllowed(two, { regenerate: true }), true)
   assert.equal(elenaMasterGenerateAllowed(two), false)
-  assert.equal(elenaMasterGenerateAllowed(three, { regenerate: true }), false)
+  assert.equal(elenaMasterGenerateAllowed(three, { regenerate: true }), true)
+  assert.equal(elenaMasterGenerateAllowed(four, { regenerate: true }), false)
 })
 
 test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dark studio", () => {
@@ -172,4 +177,35 @@ test("approve copies the chosen candidate to canonical without deleting it or ca
   assert.equal(generateCalls, 0)
   assert.equal(visualIdentityStatus({ referenceImageUrl: result.canonicalPath }), "LOCKED")
   assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
+})
+
+test("look-reference photos are stored outside candidates and become Fal image_url", async () => {
+  const uploads = []
+  const path = await persistLookReference({
+    seriesId: 2,
+    characterId: 2,
+    filename: ELENA_LOOK_REF_PRIMARY,
+    imageUrl: "data:image/jpeg;base64,aGVsbG8=",
+    uploadFn: async (bucket, storagePath) => {
+      uploads.push({ bucket, storagePath })
+    },
+  })
+  assert.equal(path, characterLookRefPath(2, 2, ELENA_LOOK_REF_PRIMARY))
+  assert.doesNotMatch(path, /candidates/)
+  assert.equal(isCanonicalStoragePath(path), false)
+  const prompt = buildCharacterMasterPrompt(REAL_ELENA, { title: "LA ÚLTIMA LLAMADA" }, { lookReference: true })
+  assert.match(prompt, /LOOK REFERENCE PHOTO/)
+  assert.match(prompt, /attached model photograph/)
+  assert.match(prompt, /not a celebrity lookalike/)
+  const fal = buildFalStillRequest({
+    prompt,
+    referenceImageUrl: "data:image/jpeg;base64,aaa",
+    aspectRatio: "9:16",
+    metadata: { strength: 0.42 },
+  })
+  assert.match(fal.url, /image-to-image/)
+  assert.equal(fal.body.image_url, "data:image/jpeg;base64,aaa")
+  assert.equal(fal.body.strength, 0.42)
+  assert.doesNotMatch(fal.body.image_url, /6b4cf693/)
+  assert.equal(uploads[0].storagePath, path)
 })

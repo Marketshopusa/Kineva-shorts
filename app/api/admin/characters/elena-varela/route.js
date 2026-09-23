@@ -20,12 +20,19 @@ import {
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
   ELENA_SERIES_ID,
+  ELENA_LOOK_REF_PRIMARY,
   applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
+  characterLookRefPath,
   elenaMasterGenerateAllowed,
   isCanonicalStoragePath,
 } from "@/lib/character-master.js"
-import { approveCanonicalFromCandidate, persistCharacterCandidate } from "@/lib/character-reference-storage.js"
+import {
+  approveCanonicalFromCandidate,
+  persistCharacterCandidate,
+  persistLookReference,
+} from "@/lib/character-reference-storage.js"
+import { getSignedUrl, IMAGES_BUCKET } from "@/lib/supabase-storage"
 import { loadElenaMasterPayload, resolveElenaVarelaFromDb } from "@/lib/elena-varela-master-server.js"
 
 const CONFIRMED_ELENA_ID = 2
@@ -284,6 +291,34 @@ export async function POST(request) {
     return Response.json({ error: "Elena Varela not found in Series/2 as Character #2" }, { status: 404 })
   }
 
+  if (body.storeLookRefs === true) {
+    const images = Array.isArray(body.images) ? body.images : []
+    const stored = []
+    for (const item of images) {
+      const filename = String(item?.filename || "")
+      if (!/^model-feminine-[ab]\.jpg$/.test(filename) || !item?.dataUrl) {
+        return Response.json({
+          error: "Invalid look-ref payload",
+          generateCalls: 0,
+          falGenerateCallsThisStep: 0,
+        }, { status: 400 })
+      }
+      stored.push(await persistLookReference({
+        seriesId: character.seriesId,
+        characterId: character.id,
+        filename,
+        imageUrl: item.dataUrl,
+      }))
+    }
+    return Response.json({
+      elenaCharacterId: character.id,
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      stored,
+      elenaMaster: "LOOK_REFS_STORED",
+    })
+  }
+
   if (body.approve === true) {
     if (body.generate === true) {
       return Response.json({
@@ -360,18 +395,29 @@ export async function POST(request) {
     const { rail } = await loadSeriesRail(character.seriesId)
     assertAdapterMatchesRail(rail, "image", "fal")
     const config = await getAIConfig()
+    const useLookRefs = body.useLookRefs === true
+    let referenceImageUrl = null
+    if (useLookRefs) {
+      const lookPath = characterLookRefPath(character.seriesId, character.id, ELENA_LOOK_REF_PRIMARY)
+      referenceImageUrl = await getSignedUrl(IMAGES_BUCKET, lookPath, 60 * 60)
+    }
     const promptCharacter = regenerate
       ? { ...character, appearance: applyElenaRegenAppearance(character.appearance) }
       : character
-    const prompt = buildCharacterMasterPrompt(promptCharacter, series)
+    const prompt = buildCharacterMasterPrompt(promptCharacter, series, { lookReference: useLookRefs })
     generateCalls = 1
     const { dataUrl, provider } = await generateStillForRail(
       rail,
       {
         prompt,
-        referenceImageUrl: null,
+        referenceImageUrl,
         aspectRatio: CHARACTER_MASTER_ASPECT,
-        metadata: { kind: "character-master", characterId: character.id, seriesId: character.seriesId },
+        metadata: {
+          kind: "character-master",
+          characterId: character.id,
+          seriesId: character.seriesId,
+          strength: useLookRefs ? 0.42 : undefined,
+        },
       },
       config,
     )
