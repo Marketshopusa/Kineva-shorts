@@ -236,6 +236,8 @@ test("9. Iván NOT LOCKED blocks Scene 5–6 before spend", async () => {
   const plans = planEpisodeStills(screenplay, [ELENA, MATEO, IVAN])
   assert.equal(plans[4].ready, false)
   assert.equal(plans[5].ready, false)
+  assert.equal(plans[4].providerRoute, "MULTI_REFERENCE")
+  assert.equal(plans[5].providerRoute, "MULTI_REFERENCE")
   assert.match(plans[4].blockReason, new RegExp(REQUIRED_VISUAL_CHARACTER_NOT_LOCKED))
   assert.match(plans[5].blockReason, /Iván|Ivan/)
   let spent = 0
