@@ -8,6 +8,7 @@ import { buildSceneVisualPrompt } from "@/lib/buildSceneVisualPrompt"
 import { getVisualStyle } from "@/config/visualStyles"
 import { loadSeriesRail } from "@/lib/series-rail"
 import { generateStill } from "@/lib/still-for-rail"
+import { preflightSceneStillGeneration } from "@/lib/still-preflight"
 import prisma from "@/lib/prisma"
 import fs from "fs/promises"
 import path from "path"
@@ -292,13 +293,21 @@ ${scoringPrompt}`,
             series,
             maxLength: 1500,
           })
+          if (!planned.ready) {
+            throw new Error(planned.blockReason || "still not ready")
+          }
+          const preflight = await preflightSceneStillGeneration({
+            scene: { ...scene, visual_description: imagePromptText, storyboard: scene.storyboard },
+            characters,
+          })
           const { dataUrl } = await generateStill({
             rail,
             config,
             prompt: planned.prompt,
-            referenceImageUrl: planned.referenceImageUrl,
+            referenceImageUrls: preflight.referenceImageUrls,
+            references: preflight.references,
             aspectRatio: "9:16",
-            metadata: { episodeId, sceneIndex: index, characterIds: planned.characterIds },
+            metadata: { episodeId, sceneIndex: index, characterIds: planned.onScreenCharacterIds },
           })
           await saveImageToDisk(episodeId, index, dataUrl, planned.prompt)
           doneCount++

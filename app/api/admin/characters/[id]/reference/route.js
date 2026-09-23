@@ -1,5 +1,5 @@
-export const dynamic = "force-dynamic";
-import { requireAdmin } from "@/lib/adminAuth"
+export const dynamic = "force-dynamic"
+import { requireAdmin, requireAdminOrTaskToken } from "@/lib/adminAuth"
 import prisma from "@/lib/prisma"
 import { visualIdentityStatus } from "@/lib/character-identity"
 import {
@@ -8,6 +8,7 @@ import {
   isDurableReferencePath,
 } from "@/lib/character-reference-storage"
 import { downloadAsBuffer, IMAGES_BUCKET } from "@/lib/supabase-storage"
+import { sniffImageContentType } from "@/lib/image-bytes.js"
 
 async function loadCharacter(charId) {
   return prisma.character.findUnique({
@@ -27,7 +28,7 @@ async function loadCharacter(charId) {
  * Serves or redirects the canonical visual identity image.
  */
 export async function GET(_request, { params }) {
-  const session = await requireAdmin()
+  const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   const charId = Number((await params).id)
@@ -52,7 +53,10 @@ export async function GET(_request, { params }) {
   try {
     const buf = await downloadAsBuffer(IMAGES_BUCKET, stored)
     return new Response(buf, {
-      headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=3600" },
+      headers: {
+        "Content-Type": sniffImageContentType(buf),
+        "Cache-Control": "private, no-store",
+      },
     })
   } catch {
     const url = await canonicalReferenceDisplayUrl(stored)

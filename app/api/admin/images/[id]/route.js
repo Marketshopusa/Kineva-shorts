@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 import prisma from "@/lib/prisma"
-import { requireAdmin } from "@/lib/adminAuth"
+import { requireAdminOrTaskToken } from "@/lib/adminAuth"
 import { getPublicUrl, getSignedUrl, IMAGES_BUCKET } from "@/lib/supabase-storage"
 import fs from "fs"
 import path from "path"
 
 export async function GET(request, { params }) {
-  const session = await requireAdmin()
+  const session = await requireAdminOrTaskToken()
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   try {

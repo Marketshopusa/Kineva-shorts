@@ -111,7 +111,7 @@ test("3. characterIds resolve Character by id, not only by name", () => {
   assert.equal(byNameOnly[0].id, 7)
 })
 
-test("4. referenceImageUrl reaches the Fal adapter as image_url, not prompt text", () => {
+test("4. private canonical path is refused; signed URL is Fal image_url", () => {
   const plannedPrompt = buildSceneVisualPrompt({
     scene: SCENE4_ELENA_FIXTURE,
     characters: [ELENA_CHARACTER_FIXTURE],
@@ -119,21 +119,31 @@ test("4. referenceImageUrl reaches the Fal adapter as image_url, not prompt text
   })
   assert.equal(plannedPrompt.referenceImageUrl, "characters/2/7/canonical.png")
   assert.doesNotMatch(plannedPrompt.prompt, /must exactly match/)
+  assert.throws(
+    () => buildFalStillRequest({
+      prompt: plannedPrompt.prompt,
+      referenceImageUrl: plannedPrompt.referenceImageUrl,
+      aspectRatio: "9:16",
+    }),
+    (err) => err.code === "REFERENCE_AWARE_FAILED" && /private storage path/.test(err.message),
+  )
+  const signed = "https://signed.example/images/characters/2/7/canonical.png?token=tmp"
   const fal = buildFalStillRequest({
     prompt: plannedPrompt.prompt,
-    referenceImageUrl: plannedPrompt.referenceImageUrl,
+    referenceImageUrl: signed,
     aspectRatio: "9:16",
   })
   assert.equal(fal.route, STILL_ROUTE_REFERENCE)
-  assert.equal(fal.body.image_url, "characters/2/7/canonical.png")
+  assert.equal(fal.body.image_url, signed)
   assert.equal(fal.body.prompt, plannedPrompt.prompt)
-  assert.match(fal.url, /image-to-image/)
+  assert.match(fal.url, /flux-pro\/kontext$/)
+  assert.doesNotMatch(fal.url, /image-to-image/)
   const gemini = buildGeminiStillContents({
     prompt: plannedPrompt.prompt,
-    referenceImageUrl: plannedPrompt.referenceImageUrl,
+    referenceImageUrl: signed,
   })
   const uri = gemini.contents[0].parts[0].fileData.fileUri
-  assert.equal(uri, "characters/2/7/canonical.png")
+  assert.equal(uri, signed)
 })
 
 test("5. scene wardrobe overrides wardrobeDefault only for that scene", () => {
@@ -246,7 +256,7 @@ test("12. reference-aware failure does not silently fall back to text-only", asy
         headers: { "Content-Type": "application/json" },
       })
     }
-    if (String(url).includes("image-to-image")) {
+    if (String(url).includes("flux-pro/kontext")) {
       referenceCalls += 1
       return new Response(JSON.stringify({ error: "boom" }), { status: 500 })
     }
@@ -258,7 +268,7 @@ test("12. reference-aware failure does not silently fall back to text-only", asy
   }
   await assert.rejects(
     () => generateFalStill(
-      { prompt: "scene 4", referenceImageUrl: "characters/2/7/canonical.png" },
+      { prompt: "scene 4", referenceImageUrl: "https://signed.example/elena.png?token=tmp" },
       { FAL_KEY: "x", FAL_ALLOW_GENERATE: "1" },
       fetchFn,
     ),

@@ -85,6 +85,12 @@ export default function CharactersPage({ params }) {
         </div>
       )}
 
+      {characters.some((c) => c.pendingMasterApproval) && (
+        <div className="mb-4 px-4 py-3 rounded-xl border border-amber-400/30 bg-amber-500/10 text-sm text-amber-200">
+          Character master candidate is waiting for approval. Visual Identity stays NOT LOCKED until you confirm.
+        </div>
+      )}
+
       {characters.length === 0 && !editing ? (
         <div className="text-center py-12 bg-surface rounded-xl border border-border">
           <p className="text-text-muted mb-3">No characters yet.</p>
