@@ -9,7 +9,7 @@ import EpisodeCard from "@/components/series/EpisodeCard"
 import Breadcrumb from "@/components/ui/Breadcrumb"
 import { Pin, Check, Trash2, AlertTriangle, ChevronDown, Activity, Eye, EyeOff } from "lucide-react"
 import ConfirmDialog from "@/components/ui/ConfirmDialog"
-import { episodeCardCtaLabel, episodeIsPopulated, isUsableEpisodeStill, seriesPrimaryAction } from "@/lib/episode-watch"
+import { episodeCardCtaLabel, episodeIsPopulated, isUsableEpisodeStill, seriesPrimaryAction, watchPlayQuery, watchVersionLabel, watchVersionOptions } from "@/lib/episode-watch"
 
 // ─── Story Health Panel ────────────────────────────────────────────────────────
 
@@ -282,6 +282,7 @@ export default function SeriesDetailPage({ params }) {
   const [deleteTarget, setDeleteTarget] = useState(null)  // episode to confirm-delete
   const [loading, setLoading] = useState(true)
   const [renders, setRenders] = useState({})
+  const [watchVersion, setWatchVersion] = useState(null)
   const watchPlayerRef = useRef(null)
 
   useEffect(() => {
@@ -550,14 +551,42 @@ export default function SeriesDetailPage({ params }) {
                   Open episode
                 </Link>
               </div>
-              <video
-                ref={watchPlayerRef}
-                src={`/api/admin/episodes/${watchEpisode.id}/video?play=1`}
-                controls
-                playsInline
-                className="w-full bg-black rounded-lg"
-                style={{ aspectRatio: "9 / 16" }}
-              />
+              {(() => {
+                const render = renders[watchEpisode.id]
+                const options = watchVersionOptions(render)
+                const active = watchVersion || render?.version || "legacy"
+                return (
+                  <>
+                    {options.length > 1 ? (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {options.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setWatchVersion(opt.id)}
+                            className={`text-xs px-2 py-1 rounded ${active === opt.id ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-text-muted mb-2">
+                        {watchVersionLabel(active)}
+                      </div>
+                    )}
+                    <video
+                      ref={watchPlayerRef}
+                      key={`${watchEpisode.id}-${active}`}
+                      src={`/api/admin/episodes/${watchEpisode.id}/video?play=1${watchPlayQuery(active)}`}
+                      controls
+                      playsInline
+                      className="w-full bg-black rounded-lg"
+                      style={{ aspectRatio: "9 / 16" }}
+                    />
+                  </>
+                )
+              })()}
             </div>
           ) : null}
 

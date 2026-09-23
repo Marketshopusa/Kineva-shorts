@@ -1,7 +1,16 @@
 export const dynamic = "force-dynamic"
 import { requireAdminOrTaskToken } from "@/lib/adminAuth"
 import prisma from "@/lib/prisma"
-import { uploadBuffer, createSignedUploadUrl, RENDERS_BUCKET, renderPath } from "@/lib/supabase-storage"
+import {
+  uploadBuffer,
+  createSignedUploadUrl,
+  RENDERS_BUCKET,
+  renderPath,
+  motionRenderPath,
+  minimaxRenderPath,
+  clipPath,
+  isAllowedRenderObjectPath,
+} from "@/lib/supabase-storage"
 
 export async function POST(request, { params }) {
   const session = await requireAdminOrTaskToken()
@@ -14,22 +23,37 @@ export async function POST(request, { params }) {
   const episode = await prisma.episode.findUnique({ where: { id: episodeId } })
   if (!episode) return Response.json({ error: "Not found" }, { status: 404 })
 
-  const storagePath = renderPath(episode.seriesId, episode.id)
   const contentType = request.headers.get("content-type") || ""
 
   if (contentType.includes("application/json")) {
     const body = await request.json().catch(() => ({}))
     if (body.signedUpload === true) {
+      let storagePath = renderPath(episode.seriesId, episode.id)
+      if (body.kind === "motion") {
+        storagePath = motionRenderPath(episode.seriesId, episode.id)
+      } else if (body.kind === "minimax") {
+        storagePath = minimaxRenderPath(episode.seriesId, episode.id)
+      } else if (body.kind === "clip" && body.shotId) {
+        storagePath = clipPath(episode.seriesId, episode.id, body.shotId)
+      } else if (body.path) {
+        storagePath = String(body.path)
+      }
+      if (!isAllowedRenderObjectPath(episode.seriesId, episode.id, storagePath)) {
+        return Response.json({ error: "path not allowed for this episode" }, { status: 400 })
+      }
       const signed = await createSignedUploadUrl(RENDERS_BUCKET, storagePath, { upsert: true })
       return Response.json({
         bucket: RENDERS_BUCKET,
         path: storagePath,
         signedUrl: signed.signedUrl,
         token: signed.token,
-        contentType: "video/mp4",
+        contentType: body.contentType || "video/mp4",
+        kind: body.kind || "legacy",
       })
     }
   }
+
+  const storagePath = renderPath(episode.seriesId, episode.id)
 
   const form = await request.formData().catch(() => null)
   const file = form?.get("file")

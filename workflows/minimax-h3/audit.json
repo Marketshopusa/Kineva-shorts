@@ -1,0 +1,15 @@
+{
+  "WORKFLOW_ENGINE": "ComfyUI (inferred from capture; JSON not in this repo)",
+  "WORKFLOW_IMPORTED": false,
+  "WORKFLOW_JSON": "workflows/minimax-h3/workflow.json",
+  "STATUS": "PLACE_EXPORTED_API_JSON_HERE",
+  "CAPTURE_REFERENCE_ONLY": {
+    "aspectSelector": "9:16 Portrait",
+    "selectorResolution": "480x864",
+    "nodeWidgetsVisible": "width 1344 height 768",
+    "durationVisible": 8,
+    "turboStrengthVisible": 1,
+    "turboStepsVisible": 5,
+    "doNotChangeResolutionUntilJsonIsImported": true
+  }
+}
