@@ -90,11 +90,13 @@ test("a second generate is blocked once a candidate exists unless regenerate is 
     { path: "characters/2/2/candidates/recov.png" },
     { path: "characters/2/2/candidates/regen.png" },
   ]
+  const three = [...two, { path: "characters/2/2/candidates/look2.png" }]
   assert.equal(elenaMasterGenerateAllowed([]), true)
   assert.equal(elenaMasterGenerateAllowed(one), false)
   assert.equal(elenaMasterGenerateAllowed(one, { regenerate: true }), true)
-  assert.equal(elenaMasterGenerateAllowed(two, { regenerate: true }), false)
+  assert.equal(elenaMasterGenerateAllowed(two, { regenerate: true }), true)
   assert.equal(elenaMasterGenerateAllowed(two), false)
+  assert.equal(elenaMasterGenerateAllowed(three, { regenerate: true }), false)
 })
 
 test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dark studio", () => {
@@ -108,10 +110,15 @@ test("authorized regen prompt is Venezuelan fair-skinned blue-eyed lead, not dar
     premise: "Elena recibe una llamada.",
   })
   assert.match(prompt, /Venezuelan Latina/)
-  assert.match(prompt, /light blue or grey-blue eyes/)
+  assert.match(prompt, /light blue or grey-blue/)
   assert.match(prompt, /fair luminous white-Latina skin/)
+  assert.match(prompt, /oval or heart-shaped/)
+  assert.match(prompt, /rounded feminine chin|small rounded female chin/)
+  assert.match(prompt, /real camera photograph|DSLR photograph/)
+  assert.match(prompt, /MUST NOT have a square face/)
   assert.match(prompt, /No crop top/)
   assert.match(prompt, /Not a black studio backdrop/)
+  assert.doesNotMatch(prompt, /Emma Watson|Watson/)
   assert.doesNotMatch(prompt, /Mexican woman/)
   assert.doesNotMatch(prompt, /warm medium-brown skin/)
   assert.doesNotMatch(prompt, /blue-night/)

@@ -189,6 +189,6 @@ test("ready images bucket persists a second candidate without replacing canonica
   assert.equal(uploads.length, 2)
   assert.equal(uploads.every((item) => item.bucket === "images"), true)
   assert.equal(uploads.some((item) => /canonical\.png$/.test(item.storagePath)), false)
-  assert.equal(elenaMasterGenerateAllowed([{ path: first }, { path: second }], { regenerate: true }), false)
+  assert.equal(elenaMasterGenerateAllowed([{ path: first }, { path: second }], { regenerate: true }), true)
   assert.equal(visualIdentityStatus({ referenceImageUrl: null }), "NOT LOCKED")
 })

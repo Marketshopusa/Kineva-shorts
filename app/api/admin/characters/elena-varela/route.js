@@ -20,11 +20,9 @@ import {
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
   ELENA_SERIES_ID,
-  APPROVED_ELENA_CANDIDATE_PATH,
   applyElenaRegenAppearance,
   buildCharacterMasterPrompt,
   elenaMasterGenerateAllowed,
-  isApprovedElenaCandidatePath,
   isCanonicalStoragePath,
 } from "@/lib/character-master.js"
 import { approveCanonicalFromCandidate, persistCharacterCandidate } from "@/lib/character-reference-storage.js"
@@ -230,21 +228,10 @@ async function recoverElenaMaster(character) {
 
 async function approveElenaCanonical(character, candidatePath) {
   const existing = await loadElenaMasterPayload(character)
-  const requested = String(candidatePath || APPROVED_ELENA_CANDIDATE_PATH)
-  if (!isApprovedElenaCandidatePath(requested)) {
-    return Response.json({
-      error: "Only the approved Elena candidate can be locked",
-      elenaCharacterId: character.id,
-      generateCalls: 0,
-      falGenerateCallsThisStep: 0,
-      elenaMaster: "FAIL",
-      visualIdentity: existing.character.visualIdentity,
-      ...masterConstants(),
-    }, { status: 400 })
-  }
+  const requested = String(candidatePath || existing.candidates[0]?.path || "")
   if (!existing.candidates.some((item) => item.path === requested)) {
     return Response.json({
-      error: "Approved Elena candidate is not in storage",
+      error: "Elena candidate is not in storage",
       elenaCharacterId: character.id,
       generateCalls: 0,
       falGenerateCallsThisStep: 0,
@@ -404,7 +391,11 @@ export async function POST(request) {
     if (regenerate) {
       fresh = await prisma.character.update({
         where: { id: character.id },
-        data: { appearance: applyElenaRegenAppearance(character.appearance) },
+        data: {
+          appearance: applyElenaRegenAppearance(character.appearance),
+          referenceImageUrl: null,
+          referenceEpisode: null,
+        },
       })
     }
     const payload = await loadElenaMasterPayload(fresh)
