@@ -5,7 +5,7 @@ import { requireAdminOrTaskToken } from "@/lib/adminAuth"
 import prisma from "@/lib/prisma"
 import { visualIdentityStatus } from "@/lib/character-identity"
 import { withCandidateDisplayUrls } from "@/lib/elena-varela-master-server.js"
-import { listCharacterCandidates, persistCharacterCandidate } from "@/lib/character-reference-storage.js"
+import { listCharacterCandidates, persistCharacterCandidate, approveCanonicalFromCandidate } from "@/lib/character-reference-storage.js"
 import { loadSeriesRail } from "@/lib/series-rail"
 import { generateStillForRail } from "@/lib/still-for-rail"
 import { getAIConfig } from "@/lib/getAIConfig"
@@ -13,12 +13,15 @@ import { jsonRailError } from "@/lib/http-rail-error"
 import { assertAdapterMatchesRail } from "@/lib/content-rails"
 import { probeFalAccount, requireFalSpendReady } from "@/lib/providers/images/fal.js"
 import { assertImagesBucketReady } from "@/lib/storage-preflight.js"
+import { resolveCharacterReferenceForProvider } from "@/lib/character-reference-provider.js"
 import {
   CHARACTER_MASTER_ASPECT,
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
+  APPROVED_IVAN_CANDIDATE_PATH,
   buildIvanCruzMasterPrompt,
   characterMasterGenerateAllowed,
+  isApprovedIvanCandidatePath,
   isCanonicalStoragePath,
   isElenaVarelaCharacter,
   isIvanCruzCharacter,
@@ -78,6 +81,20 @@ export async function GET(_request, { params }) {
   const candidates = await withCandidateDisplayUrls(
     await listCharacterCandidates(character.seriesId, character.id),
   )
+  let providerReference = null
+  if (character.referenceImageUrl) {
+    try {
+      const resolved = await resolveCharacterReferenceForProvider(character)
+      providerReference = {
+        ok: true,
+        durablePath: resolved.durablePath,
+        providerUrlHttps: /^https:\/\//i.test(String(resolved.providerUrl || "")),
+        signedUrlPersisted: character.referenceImageUrl === resolved.providerUrl,
+      }
+    } catch (err) {
+      providerReference = { ok: false, error: String(err?.message || err) }
+    }
+  }
   return Response.json({
     id: character.id,
     seriesId: character.seriesId,
@@ -89,6 +106,66 @@ export async function GET(_request, { params }) {
     pendingApproval: !character.referenceImageUrl && candidates.length > 0,
     candidates,
     referenceImageUrl: character.referenceImageUrl ? "SET" : "EMPTY",
+    durableReferencePath: character.referenceImageUrl || null,
+    providerReference,
+    ...masterConstants(),
+  })
+}
+
+async function approveIvanCanonical(character, candidatePath) {
+  const candidates = await listCharacterCandidates(character.seriesId, character.id)
+  const requested = String(candidatePath || APPROVED_IVAN_CANDIDATE_PATH)
+  if (!isApprovedIvanCandidatePath(requested)) {
+    return Response.json({
+      error: "Iván approve only accepts the chosen candidate",
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      ivanMaster: "FAIL",
+      visualIdentity: visualIdentityStatus(character),
+    }, { status: 400 })
+  }
+  if (!candidates.some((item) => item.path === requested)) {
+    return Response.json({
+      error: "Iván candidate is not in storage",
+      generateCalls: 0,
+      falGenerateCallsThisStep: 0,
+      ivanMaster: "FAIL",
+      visualIdentity: visualIdentityStatus(character),
+    }, { status: 404 })
+  }
+
+  const { canonicalPath, candidatePath: preservedPath } = await approveCanonicalFromCandidate({
+    seriesId: character.seriesId,
+    characterId: character.id,
+    candidatePath: requested,
+  })
+
+  const fresh = await prisma.character.update({
+    where: { id: character.id },
+    data: {
+      referenceImageUrl: canonicalPath,
+      referenceEpisode: null,
+    },
+  })
+  const listed = await withCandidateDisplayUrls(
+    await listCharacterCandidates(fresh.seriesId, fresh.id),
+  )
+  const preserved = listed.some((item) => item.path === preservedPath)
+  return Response.json({
+    id: fresh.id,
+    seriesId: fresh.seriesId,
+    name: fresh.name,
+    generateCalls: 0,
+    falGenerateCallsThisStep: 0,
+    ivanMaster: visualIdentityStatus(fresh) === "LOCKED" && preserved ? "PASS" : "FAIL",
+    storagePath: canonicalPath,
+    canonicalPath,
+    candidatePreserved: preserved,
+    visualIdentity: visualIdentityStatus(fresh),
+    pendingApproval: !fresh.referenceImageUrl && listed.length > 0,
+    candidates: listed,
+    referenceImageUrl: fresh.referenceImageUrl ? "SET" : "EMPTY",
+    canonicalCreated: true,
     ...masterConstants(),
   })
 }
@@ -112,16 +189,36 @@ export async function POST(request, { params }) {
   const character = await prisma.character.findUnique({ where: { id: charId } })
   if (!character) return Response.json({ error: "Not found" }, { status: 404 })
 
-  if (body.generate !== true) {
-    return GET(request, { params: Promise.resolve({ id: String(charId) }) })
+  if (body.approve === true) {
+    if (body.generate === true) {
+      return Response.json({
+        error: "Approve does not generate",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        ivanMaster: "FAIL",
+      }, { status: 400 })
+    }
+    if (!isIvanCruzCharacter(character) || Number(character.id) !== 4) {
+      return Response.json({
+        error: "This approve path is only for Iván Cruz Character #4",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+      }, { status: 409 })
+    }
+    try {
+      return await approveIvanCanonical(character, body.candidatePath)
+    } catch (err) {
+      return jsonRailError(err) || Response.json({
+        error: err.message || "Iván approve failed",
+        generateCalls: 0,
+        falGenerateCallsThisStep: 0,
+        ivanMaster: "FAIL",
+      }, { status: 500 })
+    }
   }
 
-  if (body.approve === true) {
-    return Response.json({
-      error: "This route does not approve or lock a canonical",
-      generateCalls: 0,
-      falGenerateCallsThisStep: 0,
-    }, { status: 400 })
+  if (body.generate !== true) {
+    return GET(request, { params: Promise.resolve({ id: String(charId) }) })
   }
 
   if (isElenaVarelaCharacter(character)) {

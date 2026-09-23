@@ -4,14 +4,17 @@ import {
   CHARACTER_MASTER_ASPECT,
   CHARACTER_MASTER_MODEL,
   CHARACTER_MASTER_SIZE,
+  APPROVED_IVAN_CANDIDATE_PATH,
   candidateExtensionFromContentType,
   buildIvanCruzMasterPrompt,
   characterCandidatePath,
   characterMasterGenerateAllowed,
+  isApprovedIvanCandidatePath,
   isCanonicalStoragePath,
   isIvanCruzCharacter,
 } from "../../lib/character-master.js"
-import { persistCharacterCandidate } from "../../lib/character-reference-storage.js"
+import { approveCanonicalFromCandidate, persistCharacterCandidate } from "../../lib/character-reference-storage.js"
+import { resolveCharacterReferenceForProvider } from "../../lib/character-reference-provider.js"
 import { visualIdentityStatus } from "../../lib/character-identity.js"
 import { sniffImageContentType } from "../../lib/image-bytes.js"
 
@@ -100,4 +103,51 @@ test("a second Iván generate is blocked once a candidate exists", () => {
   assert.equal(characterMasterGenerateAllowed([]), true)
   assert.equal(characterMasterGenerateAllowed(one), false)
   assert.equal(characterMasterGenerateAllowed(one, { regenerate: false }), false)
+})
+
+test("approve copies the JPEG candidate to canonical.jpg, keeps the candidate, and does not call Fal", async () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9])
+  const downloads = []
+  const uploads = []
+  let generateCalls = 0
+  assert.equal(isApprovedIvanCandidatePath(APPROVED_IVAN_CANDIDATE_PATH), true)
+  const result = await approveCanonicalFromCandidate({
+    seriesId: 2,
+    characterId: 4,
+    candidatePath: APPROVED_IVAN_CANDIDATE_PATH,
+    downloadStorage: async (bucket, storagePath) => {
+      downloads.push({ bucket, storagePath })
+      return jpeg
+    },
+    uploadFn: async (bucket, storagePath, buffer, contentType) => {
+      uploads.push({ bucket, storagePath, bytes: buffer.length, contentType })
+    },
+  })
+  assert.equal(result.canonicalPath, "characters/2/4/canonical.jpg")
+  assert.equal(result.candidatePath, APPROVED_IVAN_CANDIDATE_PATH)
+  assert.equal(downloads[0].storagePath, APPROVED_IVAN_CANDIDATE_PATH)
+  assert.equal(uploads[0].storagePath, "characters/2/4/canonical.jpg")
+  assert.equal(uploads[0].contentType, "image/jpeg")
+  assert.equal(uploads.some((item) => item.storagePath === APPROVED_IVAN_CANDIDATE_PATH), false)
+  assert.equal(isCanonicalStoragePath(result.canonicalPath), true)
+  assert.equal(generateCalls, 0)
+  assert.equal(visualIdentityStatus({ referenceImageUrl: result.canonicalPath }), "LOCKED")
+})
+
+test("signed provider URL is not persisted as Iván canonical", async () => {
+  const character = {
+    id: 4,
+    name: "Iván Cruz",
+    referenceImageUrl: "characters/2/4/canonical.jpg",
+  }
+  const original = character.referenceImageUrl
+  const resolved = await resolveCharacterReferenceForProvider(character, {
+    downloadStorage: async () => Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    signUrl: async () => "https://signed.example/images/characters/2/4/canonical.jpg?token=tmp",
+  })
+  assert.equal(character.referenceImageUrl, original)
+  assert.equal(character.referenceImageUrl, "characters/2/4/canonical.jpg")
+  assert.match(resolved.providerUrl, /^https:\/\//)
+  assert.notEqual(resolved.providerUrl, character.referenceImageUrl)
+  assert.equal(resolved.durablePath, "characters/2/4/canonical.jpg")
 })
