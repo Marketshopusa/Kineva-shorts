@@ -25,9 +25,10 @@ const bundled = await bundle({
   publicDir: null,
 })
 console.log("BUNDLED", bundled)
+const compositionId = process.env.RENDER_COMPOSITION || "DramaVideo"
 const composition = await selectComposition({
   serveUrl: bundled,
-  id: "DramaVideo",
+  id: compositionId,
   inputProps: props,
   browserExecutable,
   chromiumOptions: { enableMultiProcessOnLinux: true },

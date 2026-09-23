@@ -282,6 +282,7 @@ export default function SeriesDetailPage({ params }) {
   const [deleteTarget, setDeleteTarget] = useState(null)  // episode to confirm-delete
   const [loading, setLoading] = useState(true)
   const [renders, setRenders] = useState({})
+  const [watchVersion, setWatchVersion] = useState("motion")
   const watchPlayerRef = useRef(null)
 
   useEffect(() => {
@@ -550,9 +551,32 @@ export default function SeriesDetailPage({ params }) {
                   Open episode
                 </Link>
               </div>
+              {renders[watchEpisode.id]?.hasMotion && renders[watchEpisode.id]?.hasLegacy ? (
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setWatchVersion("motion")}
+                    className={`text-xs px-2 py-1 rounded ${watchVersion !== "legacy" ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
+                  >
+                    Motion V1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWatchVersion("legacy")}
+                    className={`text-xs px-2 py-1 rounded ${watchVersion === "legacy" ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
+                  >
+                    Legacy Animatic
+                  </button>
+                </div>
+              ) : (
+                <div className="text-[11px] text-text-muted mb-2">
+                  {renders[watchEpisode.id]?.version === "motion" ? "Motion V1" : "Legacy Animatic"}
+                </div>
+              )}
               <video
                 ref={watchPlayerRef}
-                src={`/api/admin/episodes/${watchEpisode.id}/video?play=1`}
+                key={`${watchEpisode.id}-${watchVersion}`}
+                src={`/api/admin/episodes/${watchEpisode.id}/video?play=1${watchVersion === "legacy" ? "&version=legacy" : ""}`}
                 controls
                 playsInline
                 className="w-full bg-black rounded-lg"
